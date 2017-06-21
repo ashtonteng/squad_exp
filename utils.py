@@ -2,6 +2,8 @@ import json
 import re
 import numpy as np
 import os
+import pickle
+import collections
 
 """
 SQuAD data structure:
@@ -34,10 +36,10 @@ class DataLoader():
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.encoding = encoding
-        #self.all_txt_file = os.path.join(data_dir, "all_text.txt")
-        #self.vocab_file = os.path.join(data_dir, "vocab.pkl")
-        #self.integers_words_file = os.path.join(data_dir, "integers_words.pkl")
-        #self.words_integers_file = os.path.join(data_dir, "words_integers.pkl")
+        self.all_txt_file = os.path.join(data_dir, "all_text.txt")
+        self.vocab_file = os.path.join(data_dir, "vocab.pkl")
+        self.integers_words_file = os.path.join(data_dir, "integers_words.pkl")
+        self.words_integers_file = os.path.join(data_dir, "words_integers.pkl")
         #self.train_data_dir = os.path.join(data_dir, "train")
         #self.test_data_dir = os.path.join(data_dir, "test")
         self.para_dict_file = os.path.join(data_dir, "para_dict.pkl")
@@ -54,11 +56,15 @@ class DataLoader():
                 print("preprocessing data...")
                 train_data = self.load_json_data(os.path.join(data_dir, "train-v1.1.json"))["data"]
                 self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(train_data)
-            #if not os.path.exists(self.vocab_file):
-                #print("generating vocab from training data...")
-                #map_words_to_integers()
-            #print("loading vocab file...")
-            #self.vocab = pickle.load(open(self.vocab_file, 'rb'))
+            if not os.path.exists(self.vocab_file):
+                print("generating vocab from training data...")
+                self.vocab, self.words_integers, self.integers_words = generate_vocab()
+            else:
+                print("loading vocab file...")
+                self.vocab = pickle.load(open(self.vocab_file, 'rb'))
+                self.words_integers = pickle.load(open(self.words_integers_file, 'rb'))
+                self.integers_words = pickle.load(open(self.integers_words_file, 'rb'))
+            self.vocab_size = len(self.vocab)
         #else: #testing
             #test_data = self.load_json_data(os.path.join(data_dir, "test-v1.1.json"))
             #self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(test_data)
@@ -97,27 +103,30 @@ class DataLoader():
     def map_chars_to_integers(self):
         pass
         
-    def map_words_to_integers(self):
+    def generate_vocab(self):
         """Takes all the text in the training data and assigns an integer to each word."""
-        with codecs.open(self.all_txt_file, "r", encoding=self.encoding) as f:
+        with open(self.all_txt_file, "r", encoding=self.encoding) as f:
             data = f.read().lower()
         data = [x for x in re.split('(\W)', data) if x and x != " "]
         counter = collections.Counter(data)
         count_pairs = sorted(counter.items(), key=lambda x: -x[1])
         words, _ = zip(*count_pairs)
-        self.vocab = set(words)
+        vocab = set(words)
         pickle.dump(vocab, open(self.vocab_file, 'wb'))
         words_integers = dict(zip(words, range(len(words)))) #{word:integer}
         integers_words = dict(zip(range(len(words)), words)) #{integer:word}
         pickle.dump(words_integers, open(self.words_integers_file, 'wb'))
         pickle.dump(integers_words, open(self.integers_words_file, 'wb'))
+        return vocab, words_integers, integers_words
         #self.tensor = np.array(list(map(vocab.get, data)))
         #np.save(tensor_file, self.tensor)
         
-    def preprocess_words(self):
+    def map_words_to_integers(self, word_list, after_pad_length):
         """Uses the words_integers map to transform data to integers"""
-        words_integers = pickle.load(open(self.words_integers_file, 'rb'))
-        return np.array(list(map(words_integers.get, self.data)))
+        ret = np.zeros(after_pad_length, dtype=int)
+        mapped = np.array(list(map(self.words_integers.get, word_list)))
+        ret[:len(mapped)] = mapped
+        return ret
 
     def preprocess_chars(self):
         pass
@@ -132,7 +141,7 @@ class DataLoader():
         num_batches = int(len(deque)/self.batch_size)
         all_batches = []
         for _ in range(num_batches):
-            this_batch = [deque.pop() for _ in range(batch_size)]
+            this_batch = [deque.pop() for _ in range(self.batch_size)]
             all_batches.append(this_batch)
         last_batch = list(this_batch) #copy second last batch
         last_batch[:len(deque)] = list(deque) #replace some spots with leftovers
@@ -143,19 +152,27 @@ class DataLoader():
     def next_batch(self):
         #para_dict = {paraID: [list of words in paragraph]}
         #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
-        """Returns the next batch of data, split into inputs and targets"""
+        """Returns the next batch of data, split into inputs and targets.
+            Maps input words to integers, and stores them in a numpy array."""
         qaIDs = self.batch_deque.pop()
         paragraphs = [] #batch_size x seq_length
         questions = []
         targets_start = [] #batch_size
         targets_end = [] #batch_size
+        max_para_length = 0 #length of longest paragraph in this batch
         for qaID in qaIDs:
             paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
-            paragraphs.append(self.para_dict[paraID]) 
-            questions.append(question_words) #TODO, integrate question words!
+            paragraph_words = self.para_dict[paraID]
+            max_para_length = max(max_para_length, len(paragraph_words))
+            paragraphs.append(paragraph_words)
+            #questions.append(question_words) #TODO, integrate question words!
             targets_start.append(answer_start)
             targets_end.append(answer_end)
-        return paragraphs, questions, targets_start, targets_end
+        paragraphs_integer_array = np.zeros((self.batch_size, max_para_length), dtype=int)
+        for i in range(self.batch_size):
+            paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
+        #questions_integer_array = np.zeros((self.batch_size, max_para_length))
+        return paragraphs_integer_array, questions, np.array(targets_start), np.array(targets_end)
 
 def LoadGloveEmbedding(glove_dir, glove_dim):
     """Load GloVE embeddings into dictionary"""
