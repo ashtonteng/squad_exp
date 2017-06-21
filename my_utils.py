@@ -24,34 +24,138 @@ data {
     version
 }
 """
+class DataLoader():
+    """Preprocesses data, creates batches, and provides the next batch of data"""
+    def __init__(self, data_dir, batch_size, encoding="utf-8", training=True):
+        if training:
+            self.train_or_test = "train"
+        else:
+            self.train_or_test  ="test"
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.encoding = encoding
+        #self.all_txt_file = os.path.join(data_dir, "all_text.txt")
+        #self.vocab_file = os.path.join(data_dir, "vocab.pkl")
+        #self.integers_words_file = os.path.join(data_dir, "integers_words.pkl")
+        #self.words_integers_file = os.path.join(data_dir, "words_integers.pkl")
+        #self.train_data_dir = os.path.join(data_dir, "train")
+        #self.test_data_dir = os.path.join(data_dir, "test")
+        self.para_dict_file = os.path.join(data_dir, "para_dict.pkl")
+        self.para_to_qa_dict_file = os.path.join(data_dir, "para_to_qa_dict.pkl")
+        self.qa_data_dict_file = os.path.join(data_dir, "qa_data_dict.pkl")
+        
+        if training:
+            if os.path.exists(self.para_dict_file) and os.path.exists(self.para_to_qa_dict_file) and os.path.exists(self.qa_data_dict_file):
+                print("loading preprocessed data...") 
+                self.para_dict = pickle.load(open(self.para_dict_file, "rb"))
+                self.para_to_qa_dict = pickle.load(open(self.para_to_qa_dict_file, "rb"))
+                self.qa_data_dict = pickle.load(open(self.qa_data_dict_file, "rb"))
+            else:
+                print("preprocessing data...")
+                train_data = self.load_json_data(os.path.join(data_dir, "train-v1.1.json"))["data"]
+                self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(train_data)
+            #if not os.path.exists(self.vocab_file):
+                #print("generating vocab from training data...")
+                #map_words_to_integers()
+            #print("loading vocab file...")
+            #self.vocab = pickle.load(open(self.vocab_file, 'rb'))
+        #else: #testing
+            #test_data = self.load_json_data(os.path.join(data_dir, "test-v1.1.json"))
+            #self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(test_data)
+            #if not os.path.exists(self.vocab_file):
+                #raise RuntimeError("Could not find vocab file. Train first before testing!")
+                
+    def load_json_data(self, path):
+        return json.load(open(path))
+    
+    def parse_json_data(self, data):
+        #each paraID is a string composed of article title + number
+        para_dict = dict() #{paraID: [list of words in paragraph]}
+        para_to_qa_dict = dict() #{paraID: [list of qaIDs associated with paragraph]}
+        qa_data_dict = dict() #{qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
+        for article in data:
+            #build para_dict
+            for idx, paragraph in enumerate(article["paragraphs"]):
+                paraID = article['title'] + "_" + str(idx).zfill(4) #reformat number to 4 digits
+                words = [x for x in re.split('(\W)', paragraph["context"].strip().lower()) if x and x != " "]
+                para_dict[paraID] = words
+                for qa in paragraph["qas"]:
+                    qaID = qa["id"]
+                    try:
+                        para_to_qa_dict[paraID].append(qaID)
+                    except:
+                        para_to_qa_dict[paraID] = [qaID]
+                    q_words = [x for x in re.split('(\W)', qa["question"].strip().lower()) if x and x != " "]
+                    start_index = qa["answers"][0]["answer_start"] #there are multiples answers. choose the first one.
+                    end_index = start_index + len(qa["answers"][0]["text"]) - 1
+                    qa_data_dict[qaID] = (paraID, q_words, start_index, end_index)
+        pickle.dump(para_dict, open(self.para_dict_file, "wb"))
+        pickle.dump(para_to_qa_dict, open(self.para_to_qa_dict_file, "wb"))
+        pickle.dump(qa_data_dict, open(self.qa_data_dict_file, "wb"))
+        return para_dict, para_to_qa_dict, qa_data_dict
+    
+    def map_chars_to_integers(self):
+        pass
+        
+    def map_words_to_integers(self):
+        """Takes all the text in the training data and assigns an integer to each word."""
+        with codecs.open(self.all_txt_file, "r", encoding=self.encoding) as f:
+            data = f.read().lower()
+        data = [x for x in re.split('(\W)', data) if x and x != " "]
+        counter = collections.Counter(data)
+        count_pairs = sorted(counter.items(), key=lambda x: -x[1])
+        words, _ = zip(*count_pairs)
+        self.vocab = set(words)
+        pickle.dump(vocab, open(self.vocab_file, 'wb'))
+        words_integers = dict(zip(words, range(len(words)))) #{word:integer}
+        integers_words = dict(zip(range(len(words)), words)) #{integer:word}
+        pickle.dump(words_integers, open(self.words_integers_file, 'wb'))
+        pickle.dump(integers_words, open(self.integers_words_file, 'wb'))
+        #self.tensor = np.array(list(map(vocab.get, data)))
+        #np.save(tensor_file, self.tensor)
+        
+    def preprocess_words(self):
+        """Uses the words_integers map to transform data to integers"""
+        words_integers = pickle.load(open(self.words_integers_file, 'rb'))
+        return np.array(list(map(words_integers.get, self.data)))
 
-def LoadJsonData(filePath):
-    with open(filePath) as dataFile:
-        data = json.load(dataFile)
-    return data
+    def preprocess_chars(self):
+        pass
+    
+    def load_preprocessed(self):
+        """Loads word-integer mapping of text"""
+        pass
+    
+    def create_batches(self):
+        """Groups qaIDs into groups of batch_size"""
+        deque = collections.deque(self.qa_data_dict)
+        num_batches = int(len(deque)/self.batch_size)
+        all_batches = []
+        for _ in range(num_batches):
+            this_batch = [deque.pop() for _ in range(batch_size)]
+            all_batches.append(this_batch)
+        last_batch = list(this_batch) #copy second last batch
+        last_batch[:len(deque)] = list(deque) #replace some spots with leftovers
+        all_batches.append(last_batch)
+        self.batch_deque = collections.deque(all_batches)
+        self.num_batches = num_batches + 1 #added the incomplete last_batch
 
-def ParseJsonData(data):
-    #each paraID is a string composed of article title + number
-    para_dict = dict() #{paraID: [list of words in paragraph]}
-    para_to_qa_dict = dict() #{paraID: [list of qaIDs associated with paragraph]}
-    qa_data_dict = dict() #{qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
-    for article in data:
-        #build para_dict
-        for idx, paragraph in enumerate(article["paragraphs"]):
-            paraID = article['title'] + "_" + str(idx).zfill(4) #reformat number to 4 digits
-            words = [x for x in re.split('(\W)', paragraph["context"].strip().lower()) if x and x != " "]
-            para_dict[paraID] = words
-            for qa in paragraph["qas"]:
-                qaID = qa["id"]
-                try:
-                    para_to_qa_dict[paraID].append(qaID)
-                except:
-                    para_to_qa_dict[paraID] = [qaID]
-                q_words = [x for x in re.split('(\W)', qa["question"].strip().lower()) if x and x != " "]
-                start_index = qa["answers"][0]["answer_start"] #there are multiples answers. choose the first one.
-                end_index = start_index + len(qa["answers"][0]["text"]) - 1
-                qa_data_dict[qaID] = (paraID, q_words, start_index, end_index)     
-    return para_dict, para_to_qa_dict, qa_data_dict
+    def next_batch(self):
+        #para_dict = {paraID: [list of words in paragraph]}
+        #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
+        """Returns the next batch of data, split into inputs and targets"""
+        qaIDs = self.batch_deque.pop()
+        paragraphs = [] #batch_size x seq_length
+        questions = []
+        targets_start = [] #batch_size
+        targets_end = [] #batch_size
+        for qaID in qaIDs:
+            paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
+            paragraphs.append(self.para_dict[paraID]) 
+            questions.append(question_words) #TODO, integrate question words!
+            targets_start.append(answer_start)
+            targets_end.append(answer_end)
+        return paragraphs, questions, targets_start, targets_end
 
 def LoadGloveEmbedding(glove_dir, glove_dim):
     """Load GloVE embeddings into dictionary"""
