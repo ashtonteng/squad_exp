@@ -24,3 +24,23 @@ with open(vocab_file, 'rb') as f:
     vocab_size = len(chars)
 vocab = dict(zip(chars, range(len(chars)))) #{char: integer}
 tensor = np.array(list(map(vocab.get, data)))
+
+
+"""Get all words in passages and questions for Char-RNN"""
+with open("all_passages.txt", "w", encoding="utf-8") as file:
+    for article in data:
+        for paragraph in article["paragraphs"]:
+            file.write(paragraph["context"] + " ")
+
+with open("all_questions.txt", "w", encoding="utf-8") as file:
+    for article in data:
+        for paragraph in article["paragraphs"]:
+            for qa in paragraph["qas"]:
+                file.write(qa["question"] + " ")
+
+with open("all_text.txt", "w", encoding="utf-8") as file:
+    for article in data:
+        for paragraph in article["paragraphs"]:
+            file.write(paragraph["context"] + " ")
+            for qa in paragraph["qas"]:
+                file.write(qa["question"] + " ")
