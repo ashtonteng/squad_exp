@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.contrib import rnn
-from tensorflow.contrib import legacy_seq2seq
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
@@ -22,6 +21,7 @@ class Model():
         else:
             raise Exception("model type not supported: {}".format(args.model))
 
+        
         self.cells_fw = []
         for _ in range(args.num_layers):
             cell = cell_fn(args.rnn_size)

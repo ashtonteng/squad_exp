@@ -149,7 +149,31 @@ class DataLoader():
         self.batch_deque = collections.deque(all_batches)
         self.num_batches = num_batches + 1 #added the incomplete last_batch
 
+        self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
+        self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
+
     def next_batch(self):
+        #returns the next_batch of data, with fixed-length paragraphs and questions.
+        qaIDs = self.batch_deque.pop()
+        paragraphs = [] #batch_size x seq_length
+        questions = []
+        targets_start = [] #batch_size
+        targets_end = [] #batch_size
+        for qaID in qaIDs:
+            paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
+            paragraph_words = self.para_dict[paraID]
+            paragraphs.append(paragraph_words)
+            questions.append(question_words) #TODO, integrate question words!
+            targets_start.append(answer_start)
+            targets_end.append(answer_end)
+        paragraphs_integer_array = np.zeros((self.batch_size, self.max_para_length), dtype=int)
+        questions_integer_array = np.zeros((self.batch_size, self.max_ques_length), dtype=int)
+        for i in range(self.batch_size):
+            paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], self.max_para_length)
+            questions_integer_array[i] = self.map_words_to_integers(questions[i], self.max_ques_length)
+        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
+
+    def next_batch_variable_seq_length(self): #currently unused
         #para_dict = {paraID: [list of words in paragraph]}
         #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
         """Returns the next batch of data, split into inputs and targets.
@@ -160,19 +184,22 @@ class DataLoader():
         targets_start = [] #batch_size
         targets_end = [] #batch_size
         max_para_length = 0 #length of longest paragraph in this batch
+        max_ques_length = 0 #length of longest question in this batch
         for qaID in qaIDs:
             paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
             paragraph_words = self.para_dict[paraID]
             max_para_length = max(max_para_length, len(paragraph_words))
             paragraphs.append(paragraph_words)
-            #questions.append(question_words) #TODO, integrate question words!
+            max_ques_length = max(max_ques_length, len(question_words))
+            questions.append(question_words) #TODO, integrate question words!
             targets_start.append(answer_start)
             targets_end.append(answer_end)
         paragraphs_integer_array = np.zeros((self.batch_size, max_para_length), dtype=int)
+        questions_integer_array = np.zeros((self.batch_size, max_ques_length), dtype=int)
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
-        #questions_integer_array = np.zeros((self.batch_size, max_para_length))
-        return paragraphs_integer_array, questions, np.array(targets_start), np.array(targets_end)
+            questions_integer_array[i] = self.map_words_to_integers(questions[i], max_ques_length)
+        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
 
 def LoadGloveEmbedding(glove_dir, glove_dim):
     """Load GloVE embeddings into dictionary"""
