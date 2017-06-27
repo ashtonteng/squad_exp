@@ -64,3 +64,33 @@ for t in range(p_length):
     temp1.append(tf.stack(temp2)) #each element is batch_size x q_length
 sim_mtx = tf.stack(temp1) #tf.constant(np.empty((p_length, q_length, batch_size))) #S
 print(sim_mtx.get_shape())
+
+def main():
+    parser = argparse.ArgumentParser(
+                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--data_dir', type=str, default='data',
+                        help='data directory')
+    parser.add_argument('--rnn_size', type=int, default=128,
+                        help='size of RNN hidden state')
+    parser.add_argument('--num_layers', type=int, default=1,
+                        help='number of layers in the RNN')
+    parser.add_argument('--model', type=str, default='lstm',
+                        help='rnn, gru, lstm, or nas')
+    parser.add_argument('--batch_size', type=int, default=10,
+                        help='minibatch size')
+    parser.add_argument('--num_epochs', type=int, default=10,
+                        help='number of epochs')
+    parser.add_argument('--save_every', type=int, default=100,
+                        help='save frequency')
+    parser.add_argument('--grad_clip', type=float, default=5.,
+                        help='clip gradients at this value')
+    parser.add_argument('--learning_rate', type=float, default=0.002,
+                        help='learning rate')
+    parser.add_argument('--decay_rate', type=float, default=0.97,
+                        help='decay rate for rmsprop')
+    parser.add_argument('--output_keep_prob', type=float, default=1.0,
+                        help='probability of keeping weights in the hidden layer')
+    parser.add_argument('--input_keep_prob', type=float, default=1.0,
+                        help='probability of keeping weights in the input layer')
+    args = parser.parse_args()
+    train(args)

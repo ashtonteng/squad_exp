@@ -50,10 +50,10 @@ def train(args):
     args.vocab_size = data_loader.vocab_size
 
     #Initialize layers
-    paragraph_layer = BiRNNLayer(args.vocab_size, args.max_para_length, scope="paraBiRNN")
-    question_layer = BiRNNLayer(args.vocab_size, args.max_ques_length, scope="quesBiRNN")
-    attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, args.max_para_length, args.max_ques_length, args.rnn_size, scope="attention")
-    output_layer = PointerLayer(attention_layer.outputs, scope="pointer")
+    paragraph_layer = BiRNNLayer(args.vocab_size, batch_size=args.batch_size, scope="paraBiRNN")
+    question_layer = BiRNNLayer(args.vocab_size, batch_size=args.batch_size, scope="quesBiRNN")
+    attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, hidden_size=args.rnn_size, scope="attention")
+    output_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, scope="pointer")
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -61,18 +61,34 @@ def train(args):
             sess.run(tf.assign(output_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
             for b in range(data_loader.num_batches):
                 start = time.time()
-                paragraphs, questions, targets_start, targets_end = data_loader.next_batch()
+                paragraphs, p_length, questions, q_length, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
+
                 #y1 = [2]*args.batch_size #pointer labels for start index. Not one-hot.
                 #y2 = [3]*args.batch_size #pointer labels for end index. Not one-hot
                 feed = {paragraph_layer.inputs: paragraphs,
-                        question_layer.inputs: questions, 
+                        paragraph_layer.seq_length: p_length,
+                        question_layer.inputs: questions,
+                        question_layer.seq_length: q_length,
                         output_layer.targets_start: targets_start, 
                         output_layer.targets_end: targets_end}
                 #for i, (c, h) in enumerate(model.initial_states_fw): #for each LSTMStateTuple
                     #feed[c] = state[i].c
                     #feed[h] = state[i].h
-                train_loss, p1, p2, _ = sess.run([output_layer.cost, output_layer.p1, output_layer.p2, output_layer.train_op], feed)
+                train_loss, p1, p2, a, b, c, _ = sess.run([output_layer.cost, output_layer.p1, output_layer.p2, output_layer.a, output_layer.b, output_layer.c, output_layer.train_op], feed)
                 #print(p1[0][2], p2[0][3])
+                #print(p1, p2)
+                print(targets_start)
+                print(len(p1[0]))
+                print("-------")
+                print(p1)
+                print("-------")
+                print(p2)
+                print("------")
+                print(a)
+                print("------")
+                print(b)
+                print('------')
+                print(c)
 
                 # instrument for tensorboard
                 #summ, train_loss, state_fw, state_bw, _ = sess.run([summaries, model.cost, model.final_state_fw, model.final_state_bw, model.train_op], feed)

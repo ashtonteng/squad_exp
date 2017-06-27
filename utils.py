@@ -185,9 +185,11 @@ class DataLoader():
         targets_end = [] #batch_size
         max_para_length = 0 #length of longest paragraph in this batch
         max_ques_length = 0 #length of longest question in this batch
+        print("heyyy???")
         for qaID in qaIDs:
             paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
             paragraph_words = self.para_dict[paraID]
+            print(len(paragraph_words))
             max_para_length = max(max_para_length, len(paragraph_words))
             paragraphs.append(paragraph_words)
             max_ques_length = max(max_ques_length, len(question_words))
@@ -196,10 +198,11 @@ class DataLoader():
             targets_end.append(answer_end)
         paragraphs_integer_array = np.zeros((self.batch_size, max_para_length), dtype=int)
         questions_integer_array = np.zeros((self.batch_size, max_ques_length), dtype=int)
+        print(max_para_length, max_ques_length)
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
             questions_integer_array[i] = self.map_words_to_integers(questions[i], max_ques_length)
-        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
+        return paragraphs_integer_array, max_para_length, questions_integer_array, max_ques_length, np.array(targets_start), np.array(targets_end)
 
 def LoadGloveEmbedding(glove_dir, glove_dim):
     """Load GloVE embeddings into dictionary"""
