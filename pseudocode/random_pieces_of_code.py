@@ -1,15 +1,4 @@
-"""Embedding lookup for static variables"""
 
-W = tf.Variable(tf.constant(0.0, shape=[vocab_size, embedding_dim]),
-                trainable=False, name="W")
-
-embedding_placeholder = tf.placeholder(tf.float32, [vocab_size, embedding_dim])
-embedding_init = W.assign(embedding_placeholder)
-
-# ...
-sess = tf.Session()
-
-sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
 
 """Vocab lookup: char --> integer"""
 import codecs
@@ -94,3 +83,20 @@ def main():
                         help='probability of keeping weights in the input layer')
     args = parser.parse_args()
     train(args)
+
+def generate_glove_vocab(self, glove_dir, glove_dim):
+    
+    with open(self.all_txt_file, "r", encoding=self.encoding) as f:
+        data = f.read().lower()
+    data = [x for x in re.split('(\W)', data) if x and x != " "]
+    counter = collections.Counter(data)
+    count_pairs = sorted(counter.items(), key=lambda x: -x[1])
+    words, _ = zip(*count_pairs)
+    vocab = set(words)
+    pickle.dump(vocab, open(self.vocab_file, 'wb'))
+    words_integers = dict(zip(words, range(len(words)))) #{word:integer}
+    integers_words = dict(zip(range(len(words)), words)) #{integer:word}
+    pickle.dump(words_integers, open(self.words_integers_file, 'wb'))
+    pickle.dump(integers_words, open(self.integers_words_file, 'wb'))
+    return vocab, words_integers, integers_words
+    

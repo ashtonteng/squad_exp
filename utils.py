@@ -26,20 +26,20 @@ data {
     version
 }
 """
+
 class DataLoader():
     """Preprocesses data, creates batches, and provides the next batch of data"""
-    def __init__(self, data_dir, batch_size, encoding="utf-8", training=True):
-        if training:
-            self.train_or_test = "train"
-        else:
-            self.train_or_test  ="test"
+    def __init__(self, data_dir, embedding_dim=50, batch_size=20, encoding="utf-8", training=True):
         self.data_dir = data_dir
+        self.glove_dir = glove_dir = os.path.join(data_dir, "glove")
+        self.embedding_dim = embedding_dim
         self.batch_size = batch_size
         self.encoding = encoding
         self.all_txt_file = os.path.join(data_dir, "all_text.txt")
         self.vocab_file = os.path.join(data_dir, "vocab.pkl")
         self.integers_words_file = os.path.join(data_dir, "integers_words.pkl")
         self.words_integers_file = os.path.join(data_dir, "words_integers.pkl")
+        self.embed_mtx_file = os.path.join(data_dir, "embed_mtx.pkl")
         #self.train_data_dir = os.path.join(data_dir, "train")
         #self.test_data_dir = os.path.join(data_dir, "test")
         self.para_dict_file = os.path.join(data_dir, "para_dict.pkl")
@@ -56,14 +56,15 @@ class DataLoader():
                 print("preprocessing data...")
                 train_data = self.load_json_data(os.path.join(data_dir, "train-v1.1.json"))["data"]
                 self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(train_data)
-            if not os.path.exists(self.vocab_file):
-                print("generating vocab from training data...")
-                self.vocab, self.words_integers, self.integers_words = generate_vocab()
-            else:
-                print("loading vocab file...")
+            if os.path.exists(self.vocab_file) and os.path.exists(self.integers_words_file) and os.path.exists(self.words_integers_file) and os.path.exists(self.embed_mtx_file):
+                print("loading vocab files...")
                 self.vocab = pickle.load(open(self.vocab_file, 'rb'))
                 self.words_integers = pickle.load(open(self.words_integers_file, 'rb'))
                 self.integers_words = pickle.load(open(self.integers_words_file, 'rb'))
+                self.embed_mtx = pickle.load(open(self.embed_mtx_file, 'rb'))
+            else:
+                print("generating vocab from training data and glove...")
+                self.vocab, self.words_integers, self.integers_words, self.embed_mtx = self.generate_vocab_and_embedding_mtx()
             self.vocab_size = len(self.vocab)
         #else: #testing
             #test_data = self.load_json_data(os.path.join(data_dir, "test-v1.1.json"))
@@ -79,12 +80,20 @@ class DataLoader():
         para_dict = dict() #{paraID: [list of words in paragraph]}
         para_to_qa_dict = dict() #{paraID: [list of qaIDs associated with paragraph]}
         qa_data_dict = dict() #{qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
+
+        def find_sub_list(sublst, lst):
+            """Given a list and a sublist, find the starting and ending indices of the sublist in the list."""
+            for index in (i for i, e in enumerate(lst) if e == sublst[0]): #if list_word == sublist[0]
+                if lst[index:index+len(sublst)] == sublst:
+                    return index, index + len(sublst) - 1
+            raise ValueError("sublist not found in list!")
+
         for article in data:
             #build para_dict
             for idx, paragraph in enumerate(article["paragraphs"]):
                 paraID = article['title'] + "_" + str(idx).zfill(4) #reformat number to 4 digits
-                words = [x for x in re.split('(\W)', paragraph["context"].strip().lower()) if x and x != " "]
-                para_dict[paraID] = words
+                para_words = [x for x in re.split('(\W)', paragraph["context"].strip().lower()) if x and x != " "]
+                para_dict[paraID] = para_words
                 for qa in paragraph["qas"]:
                     qaID = qa["id"]
                     try:
@@ -92,9 +101,15 @@ class DataLoader():
                     except:
                         para_to_qa_dict[paraID] = [qaID]
                     q_words = [x for x in re.split('(\W)', qa["question"].strip().lower()) if x and x != " "]
-                    start_index = qa["answers"][0]["answer_start"] #there are multiples answers. choose the first one.
-                    end_index = start_index + len(qa["answers"][0]["text"]) - 1
-                    qa_data_dict[qaID] = (paraID, q_words, start_index, end_index)
+                    a_words = [x for x in re.split('(\W)', qa["answers"][0]["text"].strip().lower()) if x and x != " "] #there are multiples answers. choose the first one.
+                    try:
+                        start_index, end_index = find_sub_list(a_words, para_words)
+                        qa_data_dict[qaID] = (paraID, q_words, start_index, end_index)
+                    except ValueError:
+                        print("question", qaID, "was discarded because answer sublist not found in paragraph list.")
+                   # start_index_char = qa["answers"][0]["answer_start"] 
+                   # end_index_char = start_index + len(qa["answers"][0]["text"]) - 1
+                    
         pickle.dump(para_dict, open(self.para_dict_file, "wb"))
         pickle.dump(para_to_qa_dict, open(self.para_to_qa_dict_file, "wb"))
         pickle.dump(qa_data_dict, open(self.qa_data_dict_file, "wb"))
@@ -102,7 +117,66 @@ class DataLoader():
     
     def map_chars_to_integers(self):
         pass
+
+    def get_glove_embeddings(self):
+        """Load GloVE embeddings into dictionary"""
+        glove_embedding = {}
+        f = open(os.path.join(self.glove_dir, 'glove.6B.'+str(self.embedding_dim)+'d.txt'), encoding="utf-8")
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            glove_embedding[word] = coefs
+        f.close()
+        return glove_embedding
+
+    def generate_vocab_and_embedding_mtx(self):
+        """Takes all the text in the training data and glove and assigns an integer to each word."""
+        with open(self.all_txt_file, "r", encoding=self.encoding) as f:
+            data = f.read().lower()
+        data = [x for x in re.split('(\W)', data) if x and x != " "]
+        counter = collections.Counter(data)
+        count_pairs = sorted(counter.items(), key=lambda x: -x[1])
+        words, _ = zip(*count_pairs)
+        train_vocab_size = len(words)
+        words_integers = dict(zip(words, range(1, train_vocab_size+1))) #{word:integer}
+        integers_words = dict(zip(range(1, train_vocab_size+1), words)) #{integer:word}
+
+        pad_integer = 0
+        words_integers["<PAD>"] = pad_integer
+        integers_words[pad_integer] = "<PAD>"
+
+        embeddings = []
+        glove_embeddings = self.get_glove_embeddings()
+        max_integer = train_vocab_size #padding integer is 0. OOV integer is max_integer+1
+        for integer in range(train_vocab_size):
+            word = integers_words[integer]
+            if word in glove_embeddings: #if word in glove, initialize to glove embedding
+                embeddings.append(glove_embeddings[word])
+            else: #if word not in glove, initialize to random embedding [0.0, 1.0]
+                embeddings.append(np.random.random(self.embedding_dim))
+        for glove_word in glove_embeddings:
+            if glove_word not in words_integers: #also add all glove_words not used in training to embedding matrix
+                new_integer = max_integer + 1
+                max_integer += 1
+                words_integers[glove_word] = new_integer
+                integers_words[new_integer] = glove_word
+                embeddings.append(glove_embeddings[glove_word])
         
+        #assign an oov integer with random embedding
+        oov_integer = max_integer + 1
+        words_integers["<OOV>"] = oov_integer
+        integers_words[oov_integer] = "<OOV>"
+        embeddings.append(np.random.random(self.embedding_dim))
+        
+        embed_mtx = np.asarray(embeddings)
+        vocab = set(words_integers.keys())
+        pickle.dump(vocab, open(self.vocab_file, 'wb'))
+        pickle.dump(words_integers, open(self.words_integers_file, 'wb'))
+        pickle.dump(integers_words, open(self.integers_words_file, 'wb'))
+        pickle.dump(embed_mtx, open(self.embed_mtx_file, 'wb'))
+        return vocab, words_integers, integers_words, embed_mtx
+
     def generate_vocab(self):
         """Takes all the text in the training data and assigns an integer to each word."""
         with open(self.all_txt_file, "r", encoding=self.encoding) as f:
@@ -118,8 +192,6 @@ class DataLoader():
         pickle.dump(words_integers, open(self.words_integers_file, 'wb'))
         pickle.dump(integers_words, open(self.integers_words_file, 'wb'))
         return vocab, words_integers, integers_words
-        #self.tensor = np.array(list(map(vocab.get, data)))
-        #np.save(tensor_file, self.tensor)
         
     def map_words_to_integers(self, word_list, after_pad_length):
         """Uses the words_integers map to transform data to integers"""
@@ -148,12 +220,11 @@ class DataLoader():
         all_batches.append(last_batch)
         self.batch_deque = collections.deque(all_batches)
         self.num_batches = num_batches + 1 #added the incomplete last_batch
-
-        self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
-        self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
-
+        
     def next_batch(self):
         #returns the next_batch of data, with fixed-length paragraphs and questions.
+        #self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
+        #self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
         qaIDs = self.batch_deque.pop()
         paragraphs = [] #batch_size x seq_length
         questions = []
@@ -178,18 +249,20 @@ class DataLoader():
         #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
         """Returns the next batch of data, split into inputs and targets.
             Maps input words to integers, and stores them in a numpy array."""
-        qaIDs = self.batch_deque.pop()
+        try:
+            qaIDs = self.batch_deque.pop()
+        except:
+            self.create_batches()
+            qaIDs = self.batch_deque.pop()
         paragraphs = [] #batch_size x seq_length
         questions = []
         targets_start = [] #batch_size
         targets_end = [] #batch_size
         max_para_length = 0 #length of longest paragraph in this batch
         max_ques_length = 0 #length of longest question in this batch
-        print("heyyy???")
         for qaID in qaIDs:
             paraID, question_words, answer_start, answer_end = self.qa_data_dict[qaID]
             paragraph_words = self.para_dict[paraID]
-            print(len(paragraph_words))
             max_para_length = max(max_para_length, len(paragraph_words))
             paragraphs.append(paragraph_words)
             max_ques_length = max(max_ques_length, len(question_words))
@@ -198,25 +271,24 @@ class DataLoader():
             targets_end.append(answer_end)
         paragraphs_integer_array = np.zeros((self.batch_size, max_para_length), dtype=int)
         questions_integer_array = np.zeros((self.batch_size, max_ques_length), dtype=int)
-        print(max_para_length, max_ques_length)
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
             questions_integer_array[i] = self.map_words_to_integers(questions[i], max_ques_length)
         return paragraphs_integer_array, max_para_length, questions_integer_array, max_ques_length, np.array(targets_start), np.array(targets_end)
 
-def LoadGloveEmbedding(glove_dir, glove_dim):
-    """Load GloVE embeddings into dictionary"""
-    embedding = {}
-    f = open(os.path.join(glove_dir, 'glove.6B.'+str(glove_dim)+'d.txt'), encoding="utf-8")
-    for line in f:
-        values = line.split()
-        word = values[0]
-        coefs = np.asarray(values[1:], dtype='float32')
-        embedding[word] = coefs
-    f.close()
-    return embedding
 
-def GetGloveRepresentation(para_dict, embedding, dim):
+
+def GetGloveRepresentation(inputs, vocab, embeddings, dim):
+    from tensorflow.contrib import learn
+    #init vocab processor
+    vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
+    #fit the vocab from glove
+    pretrain = vocab_processor.fit(vocab)
+    #transform inputs
+    x = np.array(list(vocab_processor.transform(inputs)))
+
+
+
     para_glove_dict = dict()
     for paraID in para_dict:
         words = para_dict[paraID]
