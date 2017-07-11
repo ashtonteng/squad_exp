@@ -22,13 +22,13 @@ def main():
                         help='directory to store checkpointed models')
     parser.add_argument('--log_dir', type=str, default='logs',
                         help='directory to store tensorboard logs')
-    parser.add_argument('--rnn_size', type=int, default=50,
+    parser.add_argument('--rnn_size', type=int, default=100,
                         help='size of RNN hidden state')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
     parser.add_argument('--model', type=str, default='lstm',
                         help='rnn, gru, lstm, or nas')
-    parser.add_argument('--batch_size', type=int, default=10,
+    parser.add_argument('--batch_size', type=int, default=20,
                         help='minibatch size')
     parser.add_argument('--num_epochs', type=int, default=10,
                         help='number of epochs')
@@ -96,11 +96,11 @@ def train(args):
     paragraph_layer = BiRNNLayer(args.vocab_size, inputs=para_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="paraBiRNN")
     question_layer = BiRNNLayer(args.vocab_size, inputs=ques_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="quesBiRNN")
     attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, rnn_size=2*args.rnn_size, scope="attentionLayer")
-    #logits_layer = LogitsLayer(attention_layer.outputs, batch_size=args.batch_size, scope="logits")
-    #modelling_layer = BiRNNLayer(args.vocab_size, inputs=attention_layer.outputs, batch_size=args.batch_size, rnn_size=8*args.rnn_size, num_layers=2, scope="modellingBiRNN")
-    start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
-    end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
-    loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size, scope="lossLayer")
+    logits_layer = LogitsLayer(attention_layer.outputs, batch_size=args.batch_size, scope="logits")
+    loss_layer = LossLayer(logits_layer.pred_start_dist, logits_layer.pred_end_dist, batch_size=args.batch_size, scope="lossLayer")
+    #start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
+    #end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
+    #loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size, scope="lossLayer")
 
     """Run Data through Graph"""
     with tf.Session() as sess:

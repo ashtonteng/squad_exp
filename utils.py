@@ -45,7 +45,7 @@ class DataLoader():
         self.vocab_file = os.path.join(pickle_dir, "vocab.pkl")
         self.integers_words_file = os.path.join(pickle_dir, "integers_words.pkl")
         self.words_integers_file = os.path.join(pickle_dir, "words_integers.pkl")
-        self.embed_mtx_file = os.path.join(pickle_dir, "embed_mtx.pkl")
+        self.embed_mtx_file = os.path.join(pickle_dir, "embed_mtx_"+str(embedding_dim)+".pkl")
         self.para_dict_file = os.path.join(pickle_dir, "para_dict.pkl")
         self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict.pkl")
         self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict.pkl")
