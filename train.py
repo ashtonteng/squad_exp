@@ -22,13 +22,13 @@ def main():
                         help='directory to store checkpointed models')
     parser.add_argument('--log_dir', type=str, default='logs',
                         help='directory to store tensorboard logs')
-    parser.add_argument('--rnn_size', type=int, default=100,
+    parser.add_argument('--rnn_size', type=int, default=200,
                         help='size of RNN hidden state')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
     parser.add_argument('--model', type=str, default='lstm',
                         help='rnn, gru, lstm, or nas')
-    parser.add_argument('--batch_size', type=int, default=20,
+    parser.add_argument('--batch_size', type=int, default=50,
                         help='minibatch size')
     parser.add_argument('--num_epochs', type=int, default=10,
                         help='number of epochs')
@@ -144,7 +144,7 @@ def train(args):
 
                 train_loss, pred_start_dist, pred_end_dist, _ = sess.run([loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #printing target and predicted answers for comparison
-                if b % 10 == 0:
+                if b % 30 == 0:
                     predicted_starts = np.argmax(pred_start_dist, axis=1)
                     predicted_ends = np.argmax(pred_end_dist, axis=1)
                     for i in range(args.batch_size):
