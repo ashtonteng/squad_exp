@@ -123,7 +123,7 @@ def train(args):
             sess.run(tf.assign(loss_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
             for b in range(data_loader.num_batches):
                 start = time.time()
-                paragraphs, questions, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
+                paragraphs, questions, targets_start, targets_end = data_loader.next_batch()
                 # targets_start = []
                 # targets_end = []
                 # for paragraph in paragraphs:

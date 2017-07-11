@@ -231,8 +231,8 @@ class DataLoader():
         
     def next_batch(self):
         #returns the next_batch of data, with fixed-length paragraphs and questions.
-        #self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
-        #self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
+        self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
+        self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
         qaIDs = self.batch_deque.pop()
         paragraphs = [] #batch_size x seq_length
         questions = []
