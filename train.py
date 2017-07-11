@@ -93,16 +93,14 @@ def train(args):
     ques_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
     ques_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_inputs_integers) #batch_size x seq_length x rnn_size
 
-    #paragraph_glove = GloveLayer(args.vocab_size, rnn_size=100, batch_size=args.batch_size, scope="paraGlove")
-    #question_glove = GloveLayer(args.vocab_size, rnn_size=100, batch_size=args.batch_size, scope="paraGlove")
     paragraph_layer = BiRNNLayer(args.vocab_size, inputs=para_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="paraBiRNN")
     question_layer = BiRNNLayer(args.vocab_size, inputs=ques_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="quesBiRNN")
-    attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, rnn_size=2*args.rnn_size, scope="attention")
+    attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, rnn_size=2*args.rnn_size, scope="attentionLayer")
     #logits_layer = LogitsLayer(attention_layer.outputs, batch_size=args.batch_size, scope="logits")
     #modelling_layer = BiRNNLayer(args.vocab_size, inputs=attention_layer.outputs, batch_size=args.batch_size, rnn_size=8*args.rnn_size, num_layers=2, scope="modellingBiRNN")
     start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
     end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
-    loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size)
+    loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size, scope="lossLayer")
 
     """Run Data through Graph"""
     with tf.Session() as sess:
@@ -119,7 +117,7 @@ def train(args):
             saver.restore(sess, ckpt.model_checkpoint_path)
 
         #feed glove embedding into graph
-        sess.run(embed_init, feed_dict = {embed_mtx_placeholder: data_loader.embed_mtx})
+        sess.run(embed_init, feed_dict={embed_mtx_placeholder: data_loader.embed_mtx})
 
         for e in range(args.num_epochs):
             sess.run(tf.assign(loss_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
@@ -137,8 +135,8 @@ def train(args):
                 #         targets_end.append(np.where(paragraph==2)[0][0])
                 #     except:
                 #         targets_end.append(5)
-                targets_start = [2]*args.batch_size
-                targets_end = [3]*args.batch_size
+                #targets_start = [2]*args.batch_size
+                #targets_end = [3]*args.batch_size
                 feed = {para_inputs_integers: paragraphs,
                         ques_inputs_integers: questions,
                         loss_layer.targets_start: targets_start, 
@@ -146,7 +144,7 @@ def train(args):
 
                 train_loss, pred_start_dist, pred_end_dist, _ = sess.run([loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #printing target and predicted answers for comparison
-                if b % 2 == 0:
+                if b % 10 == 0:
                     predicted_starts = np.argmax(pred_start_dist, axis=1)
                     predicted_ends = np.argmax(pred_end_dist, axis=1)
                     for i in range(args.batch_size):
