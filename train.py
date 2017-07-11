@@ -6,10 +6,12 @@ import numpy as np
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
-from utils import DataLoader, LoadGloveEmbedding, GetGloveRepresentation
+from utils import DataLoader
 from BiRNNLayer import BiRNNLayer
 from PointerLayer import PointerLayer
 from AttentionLayer import AttentionLayer
+from LogitsLayer import LogitsLayer
+from LossLayer import LossLayer
 
 def main():
     parser = argparse.ArgumentParser(
@@ -20,7 +22,7 @@ def main():
                         help='directory to store checkpointed models')
     parser.add_argument('--log_dir', type=str, default='logs',
                         help='directory to store tensorboard logs')
-    parser.add_argument('--rnn_size', type=int, default=50,
+    parser.add_argument('--rnn_size', type=int, default=100,
                         help='size of RNN hidden state')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
@@ -55,7 +57,7 @@ def main():
 
 def train(args):
     """Load Train Data"""
-    data_loader = DataLoader(args.data_dir, args.batch_size)
+    data_loader = DataLoader(args.data_dir, embedding_dim=args.rnn_size, batch_size=args.batch_size)
     data_loader.create_batches()
     args.vocab_size = data_loader.vocab_size
 
@@ -82,15 +84,25 @@ def train(args):
         pickle.dump(args, f)
 
     """Build Graph of Model"""
-    #paragraph_layer = BiRNNLayer(args.vocab_size, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="paraBiRNN")
-    #question_layer = BiRNNLayer(args.vocab_size, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="quesBiRNN")
-    paragraph_char_layer = BiRNNLayer(all_text)
-    question_char_layer = BiRNNLayer()
-    paragraph_layer = GloveLayer()
-    question_layer = GloveLayer()
+    embed_mtx = tf.Variable(tf.constant(0.0, shape=data_loader.embed_mtx.shape), trainable=True, name="embed_mtx")
+    embed_mtx_placeholder = tf.placeholder(tf.float32, shape=data_loader.embed_mtx.shape)
+    embed_init = embed_mtx.assign(embed_mtx_placeholder)
+    #GloveLayer will always directly get data from feed_dict.
+    para_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
+    para_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, para_inputs_integers) #batch_size x seq_length x rnn_size
+    ques_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
+    ques_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_inputs_integers) #batch_size x seq_length x rnn_size
+
+    #paragraph_glove = GloveLayer(args.vocab_size, rnn_size=100, batch_size=args.batch_size, scope="paraGlove")
+    #question_glove = GloveLayer(args.vocab_size, rnn_size=100, batch_size=args.batch_size, scope="paraGlove")
+    paragraph_layer = BiRNNLayer(args.vocab_size, inputs=para_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="paraBiRNN")
+    question_layer = BiRNNLayer(args.vocab_size, inputs=ques_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="quesBiRNN")
     attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, rnn_size=2*args.rnn_size, scope="attention")
-    modelling_layer = BiRNNLayer(args.vocab_size, inputs=attention_layer.outputs, batch_size=args.batch_size, rnn_size=8*args.rnn_size, num_layers=2, scope="modellingBiRNN")
-    output_layer = PointerLayer(modelling_layer.outputs, batch_size=args.batch_size, scope="pointer")
+    #logits_layer = LogitsLayer(attention_layer.outputs, batch_size=args.batch_size, scope="logits")
+    #modelling_layer = BiRNNLayer(args.vocab_size, inputs=attention_layer.outputs, batch_size=args.batch_size, rnn_size=8*args.rnn_size, num_layers=2, scope="modellingBiRNN")
+    start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
+    end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
+    loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size)
 
     """Run Data through Graph"""
     with tf.Session() as sess:
@@ -107,14 +119,13 @@ def train(args):
             saver.restore(sess, ckpt.model_checkpoint_path)
 
         #feed glove embedding into graph
-        embedding = LoadGloveEmbedding(glove_dir, glove_dim)
-        sess.run(embedding_init, feed_dict={embedding_placeholder: embedding})
+        sess.run(embed_init, feed_dict = {embed_mtx_placeholder: data_loader.embed_mtx})
 
         for e in range(args.num_epochs):
-            sess.run(tf.assign(output_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
+            sess.run(tf.assign(loss_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
             for b in range(data_loader.num_batches):
                 start = time.time()
-                paragraphs, p_length, questions, q_length, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
+                paragraphs, questions, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
                 # targets_start = []
                 # targets_end = []
                 # for paragraph in paragraphs:
@@ -126,24 +137,27 @@ def train(args):
                 #         targets_end.append(np.where(paragraph==2)[0][0])
                 #     except:
                 #         targets_end.append(5)
-                feed = {paragraph_layer.inputs: paragraphs,
-                        paragraph_layer.seq_length: p_length,
-                        question_layer.inputs: questions,
-                        question_layer.seq_length: q_length,
-                        output_layer.targets_start: targets_start, 
-                        output_layer.targets_end: targets_end}
-                train_loss, predicted_starts, predicted_ends, _ = sess.run([output_layer.cost, output_layer.predicted_starts, output_layer.predicted_ends, output_layer.train_op], feed)
-                
+                targets_start = [2]*args.batch_size
+                targets_end = [3]*args.batch_size
+                feed = {para_inputs_integers: paragraphs,
+                        ques_inputs_integers: questions,
+                        loss_layer.targets_start: targets_start, 
+                        loss_layer.targets_end: targets_end}
+
+                train_loss, pred_start_dist, pred_end_dist, _ = sess.run([loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #printing target and predicted answers for comparison
-                for i in range(args.batch_size):
-                    target_indices = list(paragraphs[i, targets_start[i]:targets_end[i]+1])
-                    target_string = " ".join(list(map(data_loader.integers_words.get, target_indices)))
-                    predicted_indices = list(paragraphs[i, predicted_starts[i]:predicted_ends[i]+1])
-                    predicted_string = " ".join(list(map(data_loader.integers_words.get, predicted_indices)))
-                    try:
-                        print(target_string, "|", predicted_string)
-                    except:
-                        print(target_indices, "|", predicted_indices)
+                if b % 2 == 0:
+                    predicted_starts = np.argmax(pred_start_dist, axis=1)
+                    predicted_ends = np.argmax(pred_end_dist, axis=1)
+                    for i in range(args.batch_size):
+                        target_indices = list(paragraphs[i, targets_start[i]:targets_end[i]+1])
+                        target_string = " ".join(list(map(data_loader.integers_words.get, target_indices)))
+                        predicted_indices = list(paragraphs[i, predicted_starts[i]:predicted_ends[i]+1])
+                        predicted_string = " ".join(list(map(data_loader.integers_words.get, predicted_indices)))
+                        try:
+                            print(target_string, "|", predicted_string)
+                        except:
+                            print(target_indices, "|", predicted_indices)
 
                 # instrument for tensorboard
                 #summ, train_loss, state_fw, state_bw, _ = sess.run([summaries, model.cost, model.final_state_fw, model.final_state_bw, model.train_op], feed)

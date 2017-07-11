@@ -29,22 +29,26 @@ data {
 
 class DataLoader():
     """Preprocesses data, creates batches, and provides the next batch of data"""
-    def __init__(self, data_dir, embedding_dim=50, batch_size=20, encoding="utf-8", training=True):
+    def __init__(self, data_dir, embedding_dim=100, batch_size=20, encoding="utf-8", training=True):
         self.data_dir = data_dir
+        self.squad_dir = squad_dir = os.path.join(data_dir, "squad")
         self.glove_dir = glove_dir = os.path.join(data_dir, "glove")
+        if not os.path.isdir(glove_dir):
+            raise Exception("GloVE vectors are missing! Please download from website.")
+        self.pickle_dir = pickle_dir = os.path.join(data_dir, "pickle")
+        if not os.path.isdir(pickle_dir):
+            os.mkdir(pickle_dir)
         self.embedding_dim = embedding_dim
         self.batch_size = batch_size
         self.encoding = encoding
-        self.all_txt_file = os.path.join(data_dir, "all_text.txt")
-        self.vocab_file = os.path.join(data_dir, "vocab.pkl")
-        self.integers_words_file = os.path.join(data_dir, "integers_words.pkl")
-        self.words_integers_file = os.path.join(data_dir, "words_integers.pkl")
-        self.embed_mtx_file = os.path.join(data_dir, "embed_mtx.pkl")
-        #self.train_data_dir = os.path.join(data_dir, "train")
-        #self.test_data_dir = os.path.join(data_dir, "test")
-        self.para_dict_file = os.path.join(data_dir, "para_dict.pkl")
-        self.para_to_qa_dict_file = os.path.join(data_dir, "para_to_qa_dict.pkl")
-        self.qa_data_dict_file = os.path.join(data_dir, "qa_data_dict.pkl")
+        self.all_txt_file = os.path.join(squad_dir, "all_text.txt")
+        self.vocab_file = os.path.join(pickle_dir, "vocab.pkl")
+        self.integers_words_file = os.path.join(pickle_dir, "integers_words.pkl")
+        self.words_integers_file = os.path.join(pickle_dir, "words_integers.pkl")
+        self.embed_mtx_file = os.path.join(pickle_dir, "embed_mtx.pkl")
+        self.para_dict_file = os.path.join(pickle_dir, "para_dict.pkl")
+        self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict.pkl")
+        self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict.pkl")
         
         if training:
             if os.path.exists(self.para_dict_file) and os.path.exists(self.para_to_qa_dict_file) and os.path.exists(self.qa_data_dict_file):
@@ -54,7 +58,7 @@ class DataLoader():
                 self.qa_data_dict = pickle.load(open(self.qa_data_dict_file, "rb"))
             else:
                 print("preprocessing data...")
-                train_data = self.load_json_data(os.path.join(data_dir, "train-v1.1.json"))["data"]
+                train_data = self.load_json_data(os.path.join(self.squad_dir, "train-v1.1.json"))["data"]
                 self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(train_data)
             if os.path.exists(self.vocab_file) and os.path.exists(self.integers_words_file) and os.path.exists(self.words_integers_file) and os.path.exists(self.embed_mtx_file):
                 print("loading vocab files...")
@@ -65,9 +69,10 @@ class DataLoader():
             else:
                 print("generating vocab from training data and glove...")
                 self.vocab, self.words_integers, self.integers_words, self.embed_mtx = self.generate_vocab_and_embedding_mtx()
-            self.vocab_size = len(self.vocab)
+            self.vocab_size = self.embed_mtx.shape[0]
+            self.oov_integer = self.words_integers["<OOV>"]
         #else: #testing
-            #test_data = self.load_json_data(os.path.join(data_dir, "test-v1.1.json"))
+            #test_data = self.load_json_data(os.path.join(self.squad_dir, "test-v1.1.json"))
             #self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(test_data)
             #if not os.path.exists(self.vocab_file):
                 #raise RuntimeError("Could not find vocab file. Train first before testing!")
@@ -178,6 +183,7 @@ class DataLoader():
         return vocab, words_integers, integers_words, embed_mtx
 
     def generate_vocab(self):
+        #Deprecated, does not use glove
         """Takes all the text in the training data and assigns an integer to each word."""
         with open(self.all_txt_file, "r", encoding=self.encoding) as f:
             data = f.read().lower()
@@ -194,10 +200,12 @@ class DataLoader():
         return vocab, words_integers, integers_words
         
     def map_words_to_integers(self, word_list, after_pad_length):
-        """Uses the words_integers map to transform data to integers"""
+        """Uses the words_integers map to transform data to integers with padding"""
+        #if word is not included in words_integers map, replace with OOV integer.
         ret = np.zeros(after_pad_length, dtype=int)
-        mapped = np.array(list(map(self.words_integers.get, word_list)))
-        ret[:len(mapped)] = mapped
+        mapped = list(map(self.words_integers.get, word_list))
+        mapped_replace_None_with_OOV = np.array([self.oov_integer if i is None else i for i in mapped])
+        ret[:len(mapped_replace_None_with_OOV)] = mapped_replace_None_with_OOV
         return ret
 
     def preprocess_chars(self):
@@ -274,7 +282,7 @@ class DataLoader():
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
             questions_integer_array[i] = self.map_words_to_integers(questions[i], max_ques_length)
-        return paragraphs_integer_array, max_para_length, questions_integer_array, max_ques_length, np.array(targets_start), np.array(targets_end)
+        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
 
 
 
@@ -286,7 +294,6 @@ def GetGloveRepresentation(inputs, vocab, embeddings, dim):
     pretrain = vocab_processor.fit(vocab)
     #transform inputs
     x = np.array(list(vocab_processor.transform(inputs)))
-
 
 
     para_glove_dict = dict()

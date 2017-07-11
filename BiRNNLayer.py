@@ -4,7 +4,7 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 class BiRNNLayer():
-    def __init__(self, vocab_size, rnn_size, scope, inputs=None, model="lstm", num_layers=1, batch_size=20, input_keep_prob=1.0, output_keep_prob=1.0, training=True):
+    def __init__(self, vocab_size, rnn_size, scope, inputs=None, model="gru", num_layers=1, batch_size=20, input_keep_prob=1.0, output_keep_prob=1.0, training=True):
         print("building BiRNNLayer", scope)
 
         if inputs is None: #this layer is first layer! Get feed_dict data and embed.

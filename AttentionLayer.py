@@ -8,7 +8,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 class AttentionLayer():
     """Implements Context-to-Query Attention. Pays attention to different parts of the query when
         reading the passage. Returns, for each word in the passage, a weighted vector of questions."""
-    def __init__(self, p_inputs, q_inputs, rnn_size, scope, batch_size=10, training=True):
+    def __init__(self, p_inputs, q_inputs, rnn_size, scope, batch_size=20, training=True):
         """p_inputs: batch_size x p_length x rnn_size"""
         """q_inputs: batch_size x q_length x rnn_size"""
         print("building attention layer", scope)
