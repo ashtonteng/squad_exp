@@ -22,8 +22,8 @@ def main():
                         help='directory to store checkpointed models')
     parser.add_argument('--log_dir', type=str, default='logs',
                         help='directory to store tensorboard logs')
-    parser.add_argument('--rnn_size', type=int, default=200,
-                        help='size of RNN hidden state')
+    parser.add_argument('--glove_size', type=int, default=200,
+                        help='size of glove embeddings')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
     parser.add_argument('--model', type=str, default='lstm',
@@ -57,9 +57,10 @@ def main():
 
 def train(args):
     """Load Train Data"""
-    data_loader = DataLoader(args.data_dir, embedding_dim=args.rnn_size, batch_size=args.batch_size)
+    data_loader = DataLoader(args.data_dir, embedding_dim=args.glove_size, batch_size=args.batch_size)
     data_loader.create_batches()
     args.vocab_size = data_loader.vocab_size
+    args.training = True
 
     """check compatibility if training is continued from previously saved model"""
     if args.init_from is not None:
@@ -93,11 +94,15 @@ def train(args):
     ques_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
     ques_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_inputs_integers) #batch_size x seq_length x rnn_size
 
-    paragraph_layer = BiRNNLayer(args.vocab_size, inputs=para_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="paraBiRNN")
-    question_layer = BiRNNLayer(args.vocab_size, inputs=ques_inputs_vectors, batch_size=args.batch_size, rnn_size=args.rnn_size, num_layers=1, scope="quesBiRNN")
-    attention_layer = AttentionLayer(paragraph_layer.outputs, question_layer.outputs, batch_size=args.batch_size, rnn_size=2*args.rnn_size, scope="attentionLayer")
-    logits_layer = LogitsLayer(attention_layer.outputs, batch_size=args.batch_size, scope="logits")
-    loss_layer = LossLayer(logits_layer.pred_start_dist, logits_layer.pred_end_dist, batch_size=args.batch_size, scope="lossLayer")
+    args.BiRNNLayer_size = args.glove_size
+    args.AttentionLayer_size = args.glove_size*2
+    args.PointerLayer_size = args.glove_size*8
+
+    paragraph_layer = BiRNNLayer(args, inputs=para_inputs_vectors, scope="paraBiRNN")
+    question_layer = BiRNNLayer(args, inputs=ques_inputs_vectors, scope="quesBiRNN")
+    attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
+    logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
+    loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
     #start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
     #end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
     #loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size, scope="lossLayer")

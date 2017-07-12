@@ -4,9 +4,16 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 class LogitsLayer():
-    def __init__(self, inputs, scope, batch_size=20, input_keep_prob=1.0, 
-                 output_keep_prob=1.0, training=True):
+    def __init__(self, args, inputs, scope):
         print("building logits layer", scope)
+        batch_size = args.batch_size
+        vocab_size = args.vocab_size
+        output_keep_prob = args.output_keep_prob
+        input_keep_prob = args.input_keep_prob
+        model = args.model
+        num_layers = args.num_layers
+        training = args.training
+
         #inputs = #batch_size x p_length x hidden_size
         input_shape = inputs.get_shape()
         
@@ -15,7 +22,7 @@ class LogitsLayer():
             inputs = tf.nn.dropout(inputs, output_keep_prob)
         
         with tf.variable_scope(scope):
-            w_p1 = tf.get_variable("w_p1", [input_shape[2], 1], initializer=tf.random_normal_initializer) #8*rnn_size x 1
+            w_p1 = tf.get_variable("w_p1", [input_shape[2], 1], initializer=tf.random_normal_initializer) #8*hidden_size x 1
             w_p2 = tf.get_variable("w_p2", [input_shape[2], 1], initializer=tf.random_normal_initializer)
 
         w_p1_tiled = tf.tile(tf.expand_dims(w_p1, 0), [batch_size, 1, 1]) #batch_size x 8*hidden_size x 1

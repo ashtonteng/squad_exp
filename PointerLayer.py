@@ -4,9 +4,18 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 class PointerLayer():
-    def __init__(self, inputs, scope, batch_size=20, hidden_size=200, model="gru", num_layers=1, input_keep_prob=1.0, 
-                 output_keep_prob=1.0, training=True):
+    def __init__(self, args, inputs, scope):
         print("building pointer layer", scope)
+
+        batch_size = args.batch_size
+        vocab_size = args.vocab_size
+        hidden_size = args.PointerLayer_size
+        output_keep_prob = args.output_keep_prob
+        input_keep_prob = args.input_keep_prob
+        model = args.model
+        num_layers = args.num_layers
+        training = args.training
+
         #inputs = #batch_size x p_length x hidden_size
         self.inputs = inputs
         max_seq_length = tf.shape(inputs)[1]

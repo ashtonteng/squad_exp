@@ -4,21 +4,27 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 class BiRNNLayer():
-    def __init__(self, vocab_size, rnn_size, scope, inputs=None, model="gru", num_layers=1, batch_size=20, input_keep_prob=1.0, output_keep_prob=1.0, training=True):
+    def __init__(self, args, scope, inputs=None):
         print("building BiRNNLayer", scope)
+        batch_size = args.batch_size
+        vocab_size = args.vocab_size
+        hidden_size = args.BiRNNLayer_size
+        output_keep_prob = args.output_keep_prob
+        input_keep_prob = args.input_keep_prob
+        model = args.model
+        num_layers = args.num_layers
+        training = args.training
 
         if inputs is None: #this layer is first layer! Get feed_dict data and embed.
             self.inputs = tf.placeholder(tf.int32, [batch_size, None]) #allows for variable seq_length
             with tf.variable_scope(scope):
-                self.embedding = tf.get_variable("embedding", [vocab_size, rnn_size])
-            inputs = tf.nn.embedding_lookup(self.embedding, self.inputs) #batch_size x seq_length x rnn_size
+                self.embedding = tf.get_variable("embedding", [vocab_size, hidden_size])
+            inputs = tf.nn.embedding_lookup(self.embedding, self.inputs) #batch_size x seq_length x hidden_size
 
         # dropout beta testing: double check which one should affect next line
         if training and output_keep_prob < 1.0:
             inputs = tf.nn.dropout(inputs, output_keep_prob)
 
-        if not training:
-            batch_size = 1
         if model == 'rnn':
             cell_fn = rnn.BasicRNNCell
         elif model == 'gru':
@@ -32,14 +38,14 @@ class BiRNNLayer():
 
         cells_fw = []
         for _ in range(num_layers):
-            cell = cell_fn(rnn_size)
+            cell = cell_fn(hidden_size)
             if training and (output_keep_prob < 1.0 or input_keep_prob < 1.0):
                 cell = rnn.DropoutWrapper(cell, input_keep_prob=input_keep_prob, output_keep_prob=output_keep_prob)
             cells_fw.append(cell) #cells is num_layers of cell stacked together
 
         cells_bw = []
         for _ in range(num_layers):
-            cell = cell_fn(rnn_size)
+            cell = cell_fn(hidden_size)
             if training and (output_keep_prob < 1.0 or input_keep_prob < 1.0):
                 cell = rnn.DropoutWrapper(cell, input_keep_prob=input_keep_prob, output_keep_prob=output_keep_prob)
             cells_bw.append(cell)
@@ -55,8 +61,8 @@ class BiRNNLayer():
             return lengths
         seq_lengths = compute_lengths(inputs)
 
-        #outputs: batch_size x seq_length x rnn_size has all the outputs at each timepoint
-        #output_states_fw: num_layers tuple of batch_size x rnn_size, representing the last state in the forward rnn for each layer
+        #outputs: batch_size x seq_length x hidden_size has all the outputs at each timepoint
+        #output_states_fw: num_layers tuple of batch_size x hidden_size, representing the last state in the forward rnn for each layer
         #same for output_states_bw
         outputs, output_states_fw, output_states_bw = rnn.stack_bidirectional_dynamic_rnn(cells_fw, cells_bw, inputs, initial_states_fw, initial_states_bw, dtype=tf.float32, sequence_length=seq_lengths, scope=scope)
         self.outputs = outputs
@@ -66,5 +72,5 @@ class BiRNNLayer():
         #print(self.outputs.get_shape())
         #print(output_state_fw.get_shape())
         #to predict something in the middle, we need to concatenate the hidden units from both sides 
-        #we have both fw and bw outputs, so rnn_size*2
-        #output_states_combo = tf.concat([output_state_fw, output_state_bw], axis=1) #batch_size x num_layers*rnn_size*2
+        #we have both fw and bw outputs, so hidden_size*2
+        #output_states_combo = tf.concat([output_state_fw, output_state_bw], axis=1) #batch_size x num_layers*hidden_size*2

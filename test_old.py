@@ -1,49 +1,39 @@
+from __future__ import print_function
 import tensorflow as tf
+
+
 import argparse
 import time
-import pickle
-import numpy as np
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
+from six.moves import cPickle
 
-from utils import DataLoader
-from BiRNNLayer import BiRNNLayer
-from PointerLayer import PointerLayer
-from AttentionLayer import AttentionLayer
-from LogitsLayer import LogitsLayer
-from LossLayer import LossLayer
+from utils import TextLoader
+from model import Model
+
 
 def main():
     parser = argparse.ArgumentParser(
                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--data_dir', type=str, default='data',
-                        help='data directory')
+    parser.add_argument('--data_dir', type=str, default='data/squad/test_questions',
+                        help='data directory containing input.txt')
     parser.add_argument('--save_dir', type=str, default='save',
                         help='directory to store checkpointed models')
-    parser.add_argument('--rnn_size', type=int, default=200,
-                        help='size of RNN hidden state')
-    parser.add_argument('--num_layers', type=int, default=1,
-                        help='number of layers in the RNN')
-    parser.add_argument('--model', type=str, default='lstm',
-                        help='rnn, gru, lstm, or nas')
+    parser.add_argument('--log_dir', type=str, default='logs',
+                        help='directory to store tensorboard logs')
+    parser.add_argument('--batch_size', type=int, default=1,
+                        help='minibatch size')
+    parser.add_argument('--seq_length', type=int, default=50,
+                        help='RNN sequence length')
     args = parser.parse_args()
-    train(args)
+    test(args)
 
 def test(args):
-    data_loader = DataLoader(args.data_dir, embedding_dim=args.rnn_size, batch_size=1)
-    data_loader.create_batches()
-
+    data_loader = TextLoader(args.data_dir, args.batch_size, args.seq_length) #batch_size is 1
     with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as f:
-        saved_args = pickle.load(f)
+        saved_args = cPickle.load(f)
     #with open(os.path.join(args.save_dir, 'chars_vocab.pkl'), 'rb') as f:
     #    chars, vocab = cPickle.load(f)
-
-
-
-
-
-
-    args.training = False
     model = Model(saved_args, training=False)
     print("loaded model...")
     with tf.Session() as sess:

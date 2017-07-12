@@ -4,8 +4,17 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 class LossLayer():
-    def __init__(self, pred_start_dist, pred_end_dist, batch_size=20, training=True, scope="loss"):
+    def __init__(self, args, pred_start_dist, pred_end_dist, scope="loss"):
         print("building loss layer", scope)
+
+        batch_size = args.batch_size
+        vocab_size = args.vocab_size
+        output_keep_prob = args.output_keep_prob
+        input_keep_prob = args.input_keep_prob
+        model = args.model
+        num_layers = args.num_layers
+        training = args.training
+
         #pred_start_dist_shape = pred_start_dist.get_shape()
         self.pred_start_dist = pred_start_dist
         self.pred_end_dist = pred_end_dist
