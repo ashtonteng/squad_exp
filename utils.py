@@ -29,12 +29,13 @@ data {
 
 class DataLoader():
     """Preprocesses data, creates batches, and provides the next batch of data"""
-    def __init__(self, data_dir, embedding_dim=100, batch_size=20, encoding="utf-8", training=True):
+    def __init__(self, data_dir, embedding_dim, batch_size, training, encoding="utf-8"):
         self.data_dir = data_dir
         self.squad_dir = squad_dir = os.path.join(data_dir, "squad")
         self.glove_dir = glove_dir = os.path.join(data_dir, "glove")
         if not os.path.isdir(glove_dir):
-            raise Exception("GloVE vectors are missing! Please download from website.")
+            os.mkdir(glove_dir)
+            raise Exception("GloVE vectors are missing! Please download from website and put in data/glove.")
         self.pickle_dir = pickle_dir = os.path.join(data_dir, "pickle")
         if not os.path.isdir(pickle_dir):
             os.mkdir(pickle_dir)
@@ -46,36 +47,41 @@ class DataLoader():
         self.integers_words_file = os.path.join(pickle_dir, "integers_words.pkl")
         self.words_integers_file = os.path.join(pickle_dir, "words_integers.pkl")
         self.embed_mtx_file = os.path.join(pickle_dir, "embed_mtx_"+str(embedding_dim)+".pkl")
-        self.para_dict_file = os.path.join(pickle_dir, "para_dict.pkl")
-        self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict.pkl")
-        self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict.pkl")
-        
+
+        if os.path.exists(self.vocab_file) and os.path.exists(self.integers_words_file) and os.path.exists(self.words_integers_file) and os.path.exists(self.embed_mtx_file):
+            print("loading vocab files...")
+            self.vocab = pickle.load(open(self.vocab_file, 'rb'))
+            self.words_integers = pickle.load(open(self.words_integers_file, 'rb'))
+            self.integers_words = pickle.load(open(self.integers_words_file, 'rb'))
+            self.embed_mtx = pickle.load(open(self.embed_mtx_file, 'rb'))
+        else:
+            if not training:
+                raise Exception("vocab files are missing, train first before testing!")
+            print("generating vocab from training data and glove...")
+            self.vocab, self.words_integers, self.integers_words, self.embed_mtx = self.generate_vocab_and_embedding_mtx()
+        self.vocab_size = self.embed_mtx.shape[0]
+        self.oov_integer = self.words_integers["<OOV>"]
+
         if training:
-            if os.path.exists(self.para_dict_file) and os.path.exists(self.para_to_qa_dict_file) and os.path.exists(self.qa_data_dict_file):
-                print("loading preprocessed data...") 
-                self.para_dict = pickle.load(open(self.para_dict_file, "rb"))
-                self.para_to_qa_dict = pickle.load(open(self.para_to_qa_dict_file, "rb"))
-                self.qa_data_dict = pickle.load(open(self.qa_data_dict_file, "rb"))
-            else:
-                print("preprocessing data...")
-                train_data = self.load_json_data(os.path.join(self.squad_dir, "train-v1.1.json"))["data"]
-                self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(train_data)
-            if os.path.exists(self.vocab_file) and os.path.exists(self.integers_words_file) and os.path.exists(self.words_integers_file) and os.path.exists(self.embed_mtx_file):
-                print("loading vocab files...")
-                self.vocab = pickle.load(open(self.vocab_file, 'rb'))
-                self.words_integers = pickle.load(open(self.words_integers_file, 'rb'))
-                self.integers_words = pickle.load(open(self.integers_words_file, 'rb'))
-                self.embed_mtx = pickle.load(open(self.embed_mtx_file, 'rb'))
-            else:
-                print("generating vocab from training data and glove...")
-                self.vocab, self.words_integers, self.integers_words, self.embed_mtx = self.generate_vocab_and_embedding_mtx()
-            self.vocab_size = self.embed_mtx.shape[0]
-            self.oov_integer = self.words_integers["<OOV>"]
-        #else: #testing
-            #test_data = self.load_json_data(os.path.join(self.squad_dir, "test-v1.1.json"))
-            #self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(test_data)
-            #if not os.path.exists(self.vocab_file):
-                #raise RuntimeError("Could not find vocab file. Train first before testing!")
+            data = self.load_json_data(os.path.join(self.squad_dir, "train-v1.1.json"))["data"]
+            self.para_dict_file = os.path.join(pickle_dir, "para_dict_train.pkl")
+            self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict_train.pkl")
+            self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict_train.pkl")
+
+        else: #testing
+            data = self.load_json_data(os.path.join(self.squad_dir, "dev-v1.1.json"))["data"]
+            self.para_dict_file = os.path.join(pickle_dir, "para_dict_dev.pkl")
+            self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict_dev.pkl")
+            self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict_dev.pkl")
+
+        if os.path.exists(self.para_dict_file) and os.path.exists(self.para_to_qa_dict_file) and os.path.exists(self.qa_data_dict_file):
+            print("loading preprocessed data...") 
+            self.para_dict = pickle.load(open(self.para_dict_file, "rb"))
+            self.para_to_qa_dict = pickle.load(open(self.para_to_qa_dict_file, "rb"))
+            self.qa_data_dict = pickle.load(open(self.qa_data_dict_file, "rb"))
+        else:
+            print("preprocessing data...")
+            self.para_dict, self.para_to_qa_dict, self.qa_data_dict = self.parse_json_data(data)
                 
     def load_json_data(self, path):
         return json.load(open(path))
@@ -86,12 +92,50 @@ class DataLoader():
         para_to_qa_dict = dict() #{paraID: [list of qaIDs associated with paragraph]}
         qa_data_dict = dict() #{qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
 
-        def find_sub_list(sublst, lst):
+        import re
+        import difflib
+        import inflect
+        p = inflect.engine()
+
+        def find_exact_sub_list(sublst, lst):
             """Given a list and a sublist, find the starting and ending indices of the sublist in the list."""
             for index in (i for i, e in enumerate(lst) if e == sublst[0]): #if list_word == sublist[0]
                 if lst[index:index+len(sublst)] == sublst:
                     return index, index + len(sublst) - 1
-            raise ValueError("sublist not found in list!")
+            raise ValueError("no exact match found between sublist and list!")
+            
+        def find_sub_list(sublst, lst):
+            try:
+                return find_exact_sub_list(sublst, lst)
+            except:
+                pass
+            if len(sublst) > 1:
+                try:
+                    return find_sub_list(sublst[1:], lst)
+                except:
+                    pass
+                try:
+                    return find_sub_list(sublst[1:], lst)
+                except:
+                    pass
+            elif len(sublst) == 1:
+                word = sublst[0]
+                if bool(re.search(r'\d', word)): #if word contains a number
+                    try:
+                        number_word = p.number_to_words(word)
+                        return find_sub_list([number_word], lst)
+                    except:
+                        pass
+                try: #find closest word in paragraph and choose that
+                    idx = np.argmax([difflib.SequenceMatcher(None, word, x).ratio() for x in lst])
+                    return (idx, idx)
+                    #similarities = [difflib.SequenceMatcher(None, word, x).ratio() for x in lst]
+                    #if max(similarities) > 0.4:
+                    #    idx = np.argmax(similarities)
+                    #    return (idx, idx)
+                except:
+                    pass
+            raise ValueError("approximate match between sublist and list not found!")
 
         for article in data:
             #build para_dict
@@ -111,10 +155,9 @@ class DataLoader():
                         start_index, end_index = find_sub_list(a_words, para_words)
                         qa_data_dict[qaID] = (paraID, q_words, start_index, end_index)
                     except ValueError:
-                        print("question", qaID, "was discarded because answer sublist not found in paragraph list.")
+                        print("question", qaID, "discarded.")
                    # start_index_char = qa["answers"][0]["answer_start"] 
                    # end_index_char = start_index + len(qa["answers"][0]["text"]) - 1
-                    
         pickle.dump(para_dict, open(self.para_dict_file, "wb"))
         pickle.dump(para_to_qa_dict, open(self.para_to_qa_dict_file, "wb"))
         pickle.dump(qa_data_dict, open(self.qa_data_dict_file, "wb"))
@@ -146,7 +189,6 @@ class DataLoader():
         train_vocab_size = len(words)
         words_integers = dict(zip(words, range(1, train_vocab_size+1))) #{word:integer}
         integers_words = dict(zip(range(1, train_vocab_size+1), words)) #{integer:word}
-
         pad_integer = 0
         words_integers["<PAD>"] = pad_integer
         integers_words[pad_integer] = "<PAD>"
@@ -154,7 +196,7 @@ class DataLoader():
         embeddings = []
         glove_embeddings = self.get_glove_embeddings()
         max_integer = train_vocab_size #padding integer is 0. OOV integer is max_integer+1
-        for integer in range(train_vocab_size):
+        for integer in range(train_vocab_size+1): #all train_vocab plus <PAD>
             word = integers_words[integer]
             if word in glove_embeddings: #if word in glove, initialize to glove embedding
                 embeddings.append(glove_embeddings[word])
@@ -162,13 +204,12 @@ class DataLoader():
                 embeddings.append(np.random.random(self.embedding_dim))
         for glove_word in glove_embeddings:
             if glove_word not in words_integers: #also add all glove_words not used in training to embedding matrix
-                new_integer = max_integer + 1
-                max_integer += 1
+                new_integer = max_integer = max_integer + 1
                 words_integers[glove_word] = new_integer
                 integers_words[new_integer] = glove_word
                 embeddings.append(glove_embeddings[glove_word])
         
-        #assign an oov integer with random embedding
+        #assign an oov integer with random embedding. These words are not in glove or training data.
         oov_integer = max_integer + 1
         words_integers["<OOV>"] = oov_integer
         integers_words[oov_integer] = "<OOV>"
@@ -230,10 +271,18 @@ class DataLoader():
         self.num_batches = num_batches + 1 #added the incomplete last_batch
         
     def next_batch(self):
-        #returns the next_batch of data, with fixed-length paragraphs and questions.
-        self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
-        self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
-        qaIDs = self.batch_deque.pop()
+        #para_dict = {paraID: [list of words in paragraph]}
+        #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
+        """Returns the next batch of data, split into inputs and targets.
+            Maps input words to integers, and stores them in a numpy array.
+            This method pads paragraphs to the longest paragraph in the entire dataset."""
+        #self.max_para_length = len(self.para_dict[max(self.para_dict, key=lambda x: len(self.para_dict[x]))]) #length of longest paragraph
+        #self.max_ques_length = len(self.qa_data_dict[max(self.qa_data_dict, key=lambda qaID: len(self.qa_data_dict[qaID][1]))][1])
+        try:
+            qaIDs = self.batch_deque.pop()
+        except:
+            self.create_batches()
+            qaIDs = self.batch_deque.pop()
         paragraphs = [] #batch_size x seq_length
         questions = []
         targets_start = [] #batch_size
@@ -250,13 +299,14 @@ class DataLoader():
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], self.max_para_length)
             questions_integer_array[i] = self.map_words_to_integers(questions[i], self.max_ques_length)
-        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
+        return qaIDs, paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
 
-    def next_batch_variable_seq_length(self): #currently unused
+    def next_batch_variable_seq_length(self):
         #para_dict = {paraID: [list of words in paragraph]}
         #qa_data_dict = {qaID: (paraID, list of words in question, answer_start_index, answer_end_index)}
         """Returns the next batch of data, split into inputs and targets.
-            Maps input words to integers, and stores them in a numpy array."""
+            Maps input words to integers, and stores them in a numpy array.
+            This method pads paragraphs to the longest paragraph in this batch."""
         try:
             qaIDs = self.batch_deque.pop()
         except:
@@ -282,9 +332,7 @@ class DataLoader():
         for i in range(self.batch_size):
             paragraphs_integer_array[i] = self.map_words_to_integers(paragraphs[i], max_para_length)
             questions_integer_array[i] = self.map_words_to_integers(questions[i], max_ques_length)
-        return paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
-
-
+        return qaIDs, paragraphs_integer_array, questions_integer_array, np.array(targets_start), np.array(targets_end)
 
 def GetGloveRepresentation(inputs, vocab, embeddings, dim):
     from tensorflow.contrib import learn

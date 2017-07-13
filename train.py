@@ -22,17 +22,17 @@ def main():
                         help='directory to store checkpointed models')
     parser.add_argument('--log_dir', type=str, default='logs',
                         help='directory to store tensorboard logs')
-    parser.add_argument('--glove_size', type=int, default=200,
+    parser.add_argument('--glove_size', type=int, default=100,
                         help='size of glove embeddings')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
-    parser.add_argument('--model', type=str, default='lstm',
+    parser.add_argument('--model', type=str, default='gru',
                         help='rnn, gru, lstm, or nas')
-    parser.add_argument('--batch_size', type=int, default=50,
+    parser.add_argument('--batch_size', type=int, default=20,
                         help='minibatch size')
     parser.add_argument('--num_epochs', type=int, default=10,
                         help='number of epochs')
-    parser.add_argument('--save_every', type=int, default=100,
+    parser.add_argument('--save_every', type=int, default=50,
                         help='save frequency')
     parser.add_argument('--grad_clip', type=float, default=5.,
                         help='clip gradients at this value')
@@ -57,13 +57,18 @@ def main():
 
 def train(args):
     """Load Train Data"""
-    data_loader = DataLoader(args.data_dir, embedding_dim=args.glove_size, batch_size=args.batch_size)
+    data_loader = DataLoader(data_dir=args.data_dir, embedding_dim=args.glove_size, batch_size=args.batch_size, training=True)
     data_loader.create_batches()
+    #some additional args
     args.vocab_size = data_loader.vocab_size
+    args.BiRNNLayer_size = args.glove_size
+    args.AttentionLayer_size = args.glove_size*2
+    args.PointerLayer_size = args.glove_size*8
     args.training = True
 
     """check compatibility if training is continued from previously saved model"""
     if args.init_from is not None:
+        print("continuing training from a previous session...")
         # check if all necessary files exist
         assert os.path.isdir(args.init_from)," %s must be a a path" % args.init_from
         assert os.path.isfile(os.path.join(args.init_from,"config.pkl")),"config.pkl file does not exist in path %s"%args.init_from
@@ -75,7 +80,7 @@ def train(args):
         # open old config and check if models are compatible
         with open(os.path.join(args.init_from, 'config.pkl'), 'rb') as f:
             saved_model_args = pickle.load(f)
-        need_be_same = ["model", "batch_size", "rnn_size", "num_layers"]
+        need_be_same = ["model", "batch_size", "num_layers", "glove_size", "vocab_size", "BiRNNLayer_size", "AttentionLayer_size", "PointerLayer_size"]
         for checkme in need_be_same:
             assert vars(saved_model_args)[checkme]==vars(args)[checkme],"Command line argument and saved model disagree on '%s' "%checkme
 
@@ -85,7 +90,7 @@ def train(args):
         pickle.dump(args, f)
 
     """Build Graph of Model"""
-    embed_mtx = tf.Variable(tf.constant(0.0, shape=data_loader.embed_mtx.shape), trainable=True, name="embed_mtx")
+    embed_mtx = tf.get_variable("embed_mtx", shape=data_loader.embed_mtx.shape, trainable=True, initializer=tf.zeros_initializer)
     embed_mtx_placeholder = tf.placeholder(tf.float32, shape=data_loader.embed_mtx.shape)
     embed_init = embed_mtx.assign(embed_mtx_placeholder)
     #GloveLayer will always directly get data from feed_dict.
@@ -94,18 +99,14 @@ def train(args):
     ques_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
     ques_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_inputs_integers) #batch_size x seq_length x rnn_size
 
-    args.BiRNNLayer_size = args.glove_size
-    args.AttentionLayer_size = args.glove_size*2
-    args.PointerLayer_size = args.glove_size*8
-
     paragraph_layer = BiRNNLayer(args, inputs=para_inputs_vectors, scope="paraBiRNN")
     question_layer = BiRNNLayer(args, inputs=ques_inputs_vectors, scope="quesBiRNN")
     attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
-    logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
-    loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
-    #start_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="startPointer")
-    #end_pointer_layer = PointerLayer(attention_layer.outputs, batch_size=args.batch_size, hidden_size=8*args.rnn_size, scope="endPointer")
-    #loss_layer = LossLayer(start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, batch_size=args.batch_size, scope="lossLayer")
+    #logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
+    #loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
+    start_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="startPointer")
+    end_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="endPointer")
+    loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
 
     """Run Data through Graph"""
     with tf.Session() as sess:
@@ -119,16 +120,17 @@ def train(args):
         saver = tf.train.Saver(tf.global_variables())
         # restore model
         if args.init_from is not None:
+            #glove embedding is already partially learned, load from saver
             saver.restore(sess, ckpt.model_checkpoint_path)
-
-        #feed glove embedding into graph
-        sess.run(embed_init, feed_dict={embed_mtx_placeholder: data_loader.embed_mtx})
+        else:
+            #if this is the first time training, feed glove embedding into graph
+            sess.run(embed_init, feed_dict={embed_mtx_placeholder: data_loader.embed_mtx})
 
         for e in range(args.num_epochs):
             sess.run(tf.assign(loss_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
             for b in range(data_loader.num_batches):
                 start = time.time()
-                paragraphs, questions, targets_start, targets_end = data_loader.next_batch()
+                qaIDs, paragraphs, questions, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
                 # targets_start = []
                 # targets_end = []
                 # for paragraph in paragraphs:
@@ -149,7 +151,9 @@ def train(args):
 
                 train_loss, pred_start_dist, pred_end_dist, _ = sess.run([loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #printing target and predicted answers for comparison
-                if b % 30 == 0:
+                if (e * data_loader.num_batches + b) % args.save_every == 0\
+                       or (e == args.num_epochs-1 and
+                           b == data_loader.num_batches-1):
                     predicted_starts = np.argmax(pred_start_dist, axis=1)
                     predicted_ends = np.argmax(pred_end_dist, axis=1)
                     for i in range(args.batch_size):
