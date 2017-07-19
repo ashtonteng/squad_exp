@@ -25,7 +25,7 @@ class LossLayer():
         targets_end_mask = tf.one_hot(self.targets_end, depth=max_seq_length, on_value=1.0, off_value=0.0)
 
         self.cost = -tf.reduce_mean(tf.log(tf.reduce_sum(tf.multiply(targets_start_mask, self.pred_start_dist), axis=1)) + tf.log(tf.reduce_sum(tf.multiply(targets_end_mask, self.pred_end_dist), axis=1)))
-
+        tf.summary.scalar('cost', self.cost)
         #INDEX DISTANCE LOSS
         #self.cost = tf.reduce_mean(tf.abs(self.predicted_starts-self.targets_start))+tf.reduce_mean(tf.abs(self.predicted_ends-self.targets_end))
 
@@ -44,6 +44,7 @@ class LossLayer():
         #    self.cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=p1, labels=targets_start_onehot)
         #                            + tf.nn.softmax_cross_entropy_with_logits(logits=p2, labels=targets_end_onehot))
         self.learning_rate = tf.Variable(0.0, trainable=False)
+        tf.summary.scalar('learning_rate', self.learning_rate)
 
         with tf.name_scope('optimizer'):
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)

@@ -44,8 +44,11 @@ def test(args):
     paragraph_layer = BiRNNLayer(args, inputs=para_inputs_vectors, scope="paraBiRNN")
     question_layer = BiRNNLayer(args, inputs=ques_inputs_vectors, scope="quesBiRNN")
     attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
-    logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
-    loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist)
+    #logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
+    #loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
+    start_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="startPointer")
+    end_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="endPointer")
+    loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
 
     with tf.Session() as sess:
         tf.global_variables_initializer().run()

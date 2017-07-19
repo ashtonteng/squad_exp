@@ -12,6 +12,8 @@ from PointerLayer import PointerLayer
 from AttentionLayer import AttentionLayer
 from LogitsLayer import LogitsLayer
 from LossLayer import LossLayer
+from MatchingLayer import MatchingLayer
+from SelfMatchingLayer import SelfMatchingLayer
 
 def main():
     parser = argparse.ArgumentParser(
@@ -63,7 +65,9 @@ def train(args):
     args.vocab_size = data_loader.vocab_size
     args.BiRNNLayer_size = args.glove_size
     args.AttentionLayer_size = args.glove_size*2
-    args.PointerLayer_size = args.glove_size*8
+    args.MatchingLayer_size = args.glove_size*2
+    args.SelfMatchingLayer_size = args.glove_size*4
+    args.PointerLayer_size = args.glove_size*16
     args.training = True
 
     """check compatibility if training is continued from previously saved model"""
@@ -101,15 +105,22 @@ def train(args):
 
     paragraph_layer = BiRNNLayer(args, inputs=para_inputs_vectors, scope="paraBiRNN")
     question_layer = BiRNNLayer(args, inputs=ques_inputs_vectors, scope="quesBiRNN")
-    attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
-    #logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
+    matching_layer = MatchingLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="matchingLayer")
+    self_matching_layer = SelfMatchingLayer(args, matching_layer.outputs, scope="selfmatchingLayer")
+    #attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
+    #logits_layer = LogitsLayer(args, self_matching_layer.outputs, scope="logits")
     #loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
-    start_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="startPointer")
-    end_pointer_layer = PointerLayer(args, attention_layer.outputs, scope="endPointer")
+    start_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="startPointer")
+    end_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="endPointer")
     loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
+    
 
+    from tensorflow.python import debug as tf_debug
     """Run Data through Graph"""
     with tf.Session() as sess:
+        #tensorflow debugger
+        #sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+        #sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         # instrument for tensorboard
         summaries = tf.summary.merge_all()
@@ -148,8 +159,12 @@ def train(args):
                         ques_inputs_integers: questions,
                         loss_layer.targets_start: targets_start, 
                         loss_layer.targets_end: targets_end}
+                
+                summ, train_loss, pred_start_dist, pred_end_dist, _ = sess.run([summaries, loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
+                #print(tf.shape(testtest))
+                #write summaries to tensorboard
+                writer.add_summary(summ, e * data_loader.num_batches + b)
 
-                train_loss, pred_start_dist, pred_end_dist, _ = sess.run([loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #printing target and predicted answers for comparison
                 if (e * data_loader.num_batches + b) % args.save_every == 0\
                        or (e == args.num_epochs-1 and
@@ -165,11 +180,8 @@ def train(args):
                             print(target_string, "|", predicted_string)
                         except:
                             print(target_indices, "|", predicted_indices)
-
-                # instrument for tensorboard
-                #summ, train_loss, state_fw, state_bw, _ = sess.run([summaries, model.cost, model.final_state_fw, model.final_state_bw, model.train_op], feed)
-                #writer.add_summary(summ, e * data_loader.num_batches + b)
-
+                
+                #print to console
                 end = time.time()
                 print("{}/{} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}"
                       .format(e * data_loader.num_batches + b,

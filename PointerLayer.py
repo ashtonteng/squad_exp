@@ -72,10 +72,7 @@ class PointerLayer():
                                      , v_tiled) #batch_size x seq_length x 1
                 predicted_probs = tf.nn.softmax(logits, dim=1) #a #batch_size x seq_length x 1
                 predicted_probs_tiled = tf.tile(predicted_probs, [1, 1, hidden_size]) #batch_size x seq_length x hidden_size
-                #print(predicted_probs_tiled, "ppt")
-                #print(inputs, "inputs")
                 weighted_input = tf.reduce_sum(tf.multiply(predicted_probs_tiled, inputs), axis=1) #c #batch_size x hidden_size
-                #print(weighted_inputs, "wi")
                 return weighted_input #weighted input is next input #c_t
             elements_finished = (time >= seq_lengths) #this operation produces boolean tensor of [batch_size] defining if corresponding sequence has ended
             finished = tf.reduce_all(elements_finished) #AND operation over all batches. True if all batches finished.
