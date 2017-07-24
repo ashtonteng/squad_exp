@@ -48,9 +48,9 @@ class LossLayer():
 
         with tf.name_scope('optimizer'):
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-            self.train_op = optimizer.minimize(self.cost)
+            #self.train_op = optimizer.minimize(self.cost)
 
             #Clipping gradients to prevent explosion
-            #gvs = optimizer.compute_gradients(self.cost)
-            #capped_gvs = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gvs]
-            #self.train_op = optimizer.apply_gradients(capped_gvs)
+            gvs = optimizer.compute_gradients(self.cost)
+            capped_gvs = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gvs]
+            self.train_op = optimizer.apply_gradients(capped_gvs)

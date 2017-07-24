@@ -50,6 +50,10 @@ class SelfMatchingLayer():
             W_vP2 = tf.get_variable("W_vP2", [hidden_size, hidden_size])#, initializer=tf.random_normal_initializer)
             W_g = tf.get_variable("W_g", [2*hidden_size, 2*hidden_size])#, initializer=tf.random_normal_initializer)
             v = tf.get_variable("v", [hidden_size, 1])
+            tf.summary.histogram("W_vP_self", W_vP)
+            tf.summary.histogram("W_g_self", W_g)
+            tf.summary.histogram("W_vP2_self", W_vP)
+            tf.summary.histogram("v_self", v)
 
         W_vP_tiled = tf.tile(tf.expand_dims(W_vP, 0), [batch_size, 1, 1]) #batch_size x hidden_size x hidden_size
         W_vP2_tiled = tf.tile(tf.expand_dims(W_vP2, 0), [batch_size, 1, 1]) #batch_size x hidden_size x hidden_size

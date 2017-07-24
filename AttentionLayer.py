@@ -42,17 +42,16 @@ class AttentionLayer():
 
         #C2Q attention: how relevant are the query words to each context word?
         #a #for each p, find weights to put on q. ##batch_size x p_length x q_length x hidden_size
-        att_on_q_aug = tf.tile(tf.nn.softmax(sim_mtx, dim=2), [1, 1, 1, hidden_size])
+        att_on_q = tf.nn.softmax(sim_mtx, dim=2)
         #q_inputs_aug = batch_size x p_length x q_length x hidden_size
-        weighted_q = tf.multiply(att_on_q_aug, q_inputs_aug)
+        weighted_q = tf.multiply(att_on_q, q_inputs_aug)
         linear_combo_q_for_each_p = tf.reduce_sum(weighted_q, axis=2) #batch_size x p_length x hidden_size
 
         #Q2C Attention: which context words have the closest similarity to one of the query words?
         #for each context word choose which query word it helps contribute to the most
         #then normalize over all context words, to get a distribution of helpfulness of all context words to this query
         att_on_p = tf.nn.softmax(tf.reduce_max(sim_mtx, axis=2), dim=1) #batch_size x p_length x 1
-        weights_p = tf.tile(att_on_p, [1, 1, hidden_size]) #batch_size x p_length x hidden_size
-        weighted_p = tf.multiply(weights_p, p_inputs) #batch_size x p_length x hidden_size
+        weighted_p = tf.multiply(att_on_p, p_inputs) #batch_size x p_length x hidden_size
 
         self.outputs = tf.concat([p_inputs, linear_combo_q_for_each_p, tf.multiply(p_inputs, linear_combo_q_for_each_p), tf.multiply(p_inputs, weighted_p)], axis=2)
 

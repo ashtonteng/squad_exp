@@ -8,6 +8,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
 from utils import DataLoader
 from BiRNNLayer import BiRNNLayer
+from CharBiRNNLayer import CharBiRNNLayer
+from ConvLayer import ConvLayer
 from PointerLayer import PointerLayer
 from AttentionLayer import AttentionLayer
 from LogitsLayer import LogitsLayer
@@ -38,9 +40,9 @@ def main():
                         help='save frequency')
     parser.add_argument('--grad_clip', type=float, default=5.,
                         help='clip gradients at this value')
-    parser.add_argument('--learning_rate', type=float, default=0.002,
+    parser.add_argument('--learning_rate', type=float, default=0.05,
                         help='learning rate')
-    parser.add_argument('--decay_rate', type=float, default=0.97,
+    parser.add_argument('--decay_rate', type=float, default=0.999,
                         help='decay rate for rmsprop')
     parser.add_argument('--output_keep_prob', type=float, default=1.0,
                         help='probability of keeping weights in the hidden layer')
@@ -61,12 +63,17 @@ def train(args):
     """Load Train Data"""
     data_loader = DataLoader(data_dir=args.data_dir, embedding_dim=args.glove_size, batch_size=args.batch_size, training=True)
     data_loader.create_batches()
+    args.vocab_size = data_loader.word_vocab_size
+    args.char_vocab_size = data_loader.char_vocab_size
+    args.max_word_length = data_loader.max_word_length
     #some additional args
-    args.vocab_size = data_loader.vocab_size
+    args.ConvLayer_size = args.glove_size
+    args.CharBiRNN_size = args.glove_size
     args.BiRNNLayer_size = args.glove_size
-    args.AttentionLayer_size = args.glove_size*2
-    args.MatchingLayer_size = args.glove_size*2
+    args.AttentionLayer_size = 2*args.glove_size #*2 is BiRNN
+    args.MatchingLayer_size = args.glove_size*2 
     args.SelfMatchingLayer_size = args.glove_size*4
+    args.LogitsLayer_size = args.AttentionLayer_size
     args.PointerLayer_size = args.glove_size*16
     args.training = True
 
@@ -84,7 +91,7 @@ def train(args):
         # open old config and check if models are compatible
         with open(os.path.join(args.init_from, 'config.pkl'), 'rb') as f:
             saved_model_args = pickle.load(f)
-        need_be_same = ["model", "batch_size", "num_layers", "glove_size", "vocab_size", "BiRNNLayer_size", "AttentionLayer_size", "PointerLayer_size"]
+        need_be_same = ["model", "batch_size", "num_layers", "glove_size", "word_vocab_size", "char_vocab_size", "BiRNNLayer_size", "AttentionLayer_size", "PointerLayer_size"]
         for checkme in need_be_same:
             assert vars(saved_model_args)[checkme]==vars(args)[checkme],"Command line argument and saved model disagree on '%s' "%checkme
 
@@ -98,21 +105,28 @@ def train(args):
     embed_mtx_placeholder = tf.placeholder(tf.float32, shape=data_loader.embed_mtx.shape)
     embed_init = embed_mtx.assign(embed_mtx_placeholder)
     #GloveLayer will always directly get data from feed_dict.
-    para_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
-    para_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, para_inputs_integers) #batch_size x seq_length x rnn_size
-    ques_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
-    ques_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_inputs_integers) #batch_size x seq_length x rnn_size
+    para_words_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
+    para_words_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, para_words_inputs_integers) #batch_size x seq_length x rnn_size
+    ques_words_inputs_integers = tf.placeholder(tf.int32, [args.batch_size, None]) #allows for variable seq_length
+    ques_words_inputs_vectors = tf.nn.embedding_lookup(embed_mtx, ques_words_inputs_integers) #batch_size x seq_length x rnn_size
 
-    paragraph_layer = BiRNNLayer(args, inputs=para_inputs_vectors, scope="paraBiRNN")
-    question_layer = BiRNNLayer(args, inputs=ques_inputs_vectors, scope="quesBiRNN")
-    matching_layer = MatchingLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="matchingLayer")
-    self_matching_layer = SelfMatchingLayer(args, matching_layer.outputs, scope="selfmatchingLayer")
-    #attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
-    #logits_layer = LogitsLayer(args, self_matching_layer.outputs, scope="logits")
-    #loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
-    start_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="startPointer")
-    end_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="endPointer")
-    loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
+    #paragraph_layer = ConvLayer(args, inputs=para_inputs_vectors, scope="paraConv")
+    #question_layer = ConvLayer(args, inputs=ques_inputs_vectors, scope="quesConv")
+    #char_paragraph_layer = CharBiRNNLayer(args, scope="paraCharBiRNN")
+    #char_question_layer = CharBiRNNLayer(args, scope="quesCharBiRNN")
+    paragraph_layer = BiRNNLayer(args, inputs=para_words_inputs_vectors, scope="paraBiRNN")
+    question_layer = BiRNNLayer(args, inputs=ques_words_inputs_vectors, scope="quesBiRNN")
+
+    #para_combo = tf.concat([char_paragraph_layer.outputs, paragraph_layer.outputs], axis=-1)
+    #ques_combo = tf.concat([char_question_layer.outputs, question_layer.outputs], axis=-1)
+    #matching_layer = MatchingLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="matchingLayer")
+    #self_matching_layer = SelfMatchingLayer(args, matching_layer.outputs, scope="selfmatchingLayer")
+    attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
+    logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
+    loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
+    #start_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="startPointer")
+    #end_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="endPointer")
+    #loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
     
 
     from tensorflow.python import debug as tf_debug
@@ -141,7 +155,7 @@ def train(args):
             sess.run(tf.assign(loss_layer.learning_rate, args.learning_rate * (args.decay_rate ** e)))
             for b in range(data_loader.num_batches):
                 start = time.time()
-                qaIDs, paragraphs, questions, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
+                qaIDs, max_para_length, max_ques_length, paragraphs_words, questions_words, paragraphs_chars, questions_chars, targets_start, targets_end = data_loader.next_batch_variable_seq_length()
                 # targets_start = []
                 # targets_end = []
                 # for paragraph in paragraphs:
@@ -155,10 +169,15 @@ def train(args):
                 #         targets_end.append(5)
                 #targets_start = [2]*args.batch_size
                 #targets_end = [3]*args.batch_size
-                feed = {para_inputs_integers: paragraphs,
-                        ques_inputs_integers: questions,
+                feed = {#char_paragraph_layer.max_seq_length: max_para_length,
+                        #char_question_layer.max_seq_length: max_ques_length,
+                        #char_paragraph_layer.inputs: paragraphs_chars,
+                        #char_question_layer.inputs: questions_chars,
+                        para_words_inputs_integers: paragraphs_words,
+                        ques_words_inputs_integers: questions_words,
                         loss_layer.targets_start: targets_start, 
                         loss_layer.targets_end: targets_end}
+
                 
                 summ, train_loss, pred_start_dist, pred_end_dist, _ = sess.run([summaries, loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #print(tf.shape(testtest))
@@ -172,9 +191,9 @@ def train(args):
                     predicted_starts = np.argmax(pred_start_dist, axis=1)
                     predicted_ends = np.argmax(pred_end_dist, axis=1)
                     for i in range(args.batch_size):
-                        target_indices = list(paragraphs[i, targets_start[i]:targets_end[i]+1])
+                        target_indices = list(paragraphs_words[i, targets_start[i]:targets_end[i]+1])
                         target_string = " ".join(list(map(data_loader.integers_words.get, target_indices)))
-                        predicted_indices = list(paragraphs[i, predicted_starts[i]:predicted_ends[i]+1])
+                        predicted_indices = list(paragraphs_words[i, predicted_starts[i]:predicted_ends[i]+1])
                         predicted_string = " ".join(list(map(data_loader.integers_words.get, predicted_indices)))
                         try:
                             print(target_string, "|", predicted_string)

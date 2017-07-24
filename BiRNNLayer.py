@@ -20,6 +20,7 @@ class BiRNNLayer():
             with tf.variable_scope(scope):
                 self.embedding = tf.get_variable("embedding", [vocab_size, hidden_size])
             inputs = tf.nn.embedding_lookup(self.embedding, self.inputs) #batch_size x seq_length x hidden_size
+            tf.summary.histogram("glove_embedding", self.embedding)
 
         # dropout beta testing: double check which one should affect next line
         if training and output_keep_prob < 1.0:
