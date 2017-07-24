@@ -9,8 +9,6 @@ class CharBiRNNLayer():
         batch_size = args.batch_size
         char_vocab_size = args.char_vocab_size
         hidden_size = args.BiRNNLayer_size
-        output_keep_prob = args.output_keep_prob
-        input_keep_prob = args.input_keep_prob
         model = args.model
         num_layers = args.num_layers
         training = args.training
@@ -40,15 +38,15 @@ class CharBiRNNLayer():
         cells_fw = []
         for _ in range(num_layers):
             cell = cell_fn(hidden_size)
-            if training and (output_keep_prob < 1.0 or input_keep_prob < 1.0):
-                cell = rnn.DropoutWrapper(cell, input_keep_prob=input_keep_prob, output_keep_prob=output_keep_prob)
+            if training and args.keep_prob < 1.0:
+                cell = rnn.DropoutWrapper(cell, input_keep_prob=args.keep_prob, output_keep_prob=args.keep_prob)
             cells_fw.append(cell) #cells is num_layers of cell stacked together
 
         cells_bw = []
         for _ in range(num_layers):
             cell = cell_fn(hidden_size)
-            if training and (output_keep_prob < 1.0 or input_keep_prob < 1.0):
-                cell = rnn.DropoutWrapper(cell, input_keep_prob=input_keep_prob, output_keep_prob=output_keep_prob)
+            if training and args.keep_prob < 1.0:
+                cell = rnn.DropoutWrapper(cell, input_keep_prob=args.keep_prob, output_keep_prob=args.keep_prob)
             cells_bw.append(cell)
 
         initial_states_fw = [cells_fw[i].zero_state(batch_size, tf.float32) for i in range(num_layers)]

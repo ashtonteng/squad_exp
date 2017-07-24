@@ -10,8 +10,6 @@ class PointerLayer():
         batch_size = args.batch_size
         vocab_size = args.vocab_size
         hidden_size = args.PointerLayer_size
-        output_keep_prob = args.output_keep_prob
-        input_keep_prob = args.input_keep_prob
         model = args.model
         num_layers = args.num_layers
         training = args.training
@@ -19,9 +17,6 @@ class PointerLayer():
         #inputs = #batch_size x p_length x hidden_size
         self.inputs = inputs
         max_seq_length = tf.shape(inputs)[1]
-        # dropout beta testing: double check which one should affect next line
-        if training and output_keep_prob < 1.0:
-            inputs = tf.nn.dropout(inputs, output_keep_prob)
 
         if not training:
             batch_size = 1

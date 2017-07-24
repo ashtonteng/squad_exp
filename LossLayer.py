@@ -9,8 +9,6 @@ class LossLayer():
 
         batch_size = args.batch_size
         vocab_size = args.vocab_size
-        output_keep_prob = args.output_keep_prob
-        input_keep_prob = args.input_keep_prob
         model = args.model
         num_layers = args.num_layers
         training = args.training
@@ -24,6 +22,10 @@ class LossLayer():
         targets_start_mask = tf.one_hot(self.targets_start, depth=max_seq_length, on_value=1.0, off_value=0.0)
         targets_end_mask = tf.one_hot(self.targets_end, depth=max_seq_length, on_value=1.0, off_value=0.0)
 
+        #l2-regularization
+        variables = tf.trainable_variables() 
+        self.lossL2 = tf.add_n([tf.nn.l2_loss(v) for v in variables if 'bias' not in v.name])*args.reg_scaling_factor
+        tf.summary.scalar('lossL2', self.lossL2)
         self.cost = -tf.reduce_mean(tf.log(tf.reduce_sum(tf.multiply(targets_start_mask, self.pred_start_dist), axis=1)) + tf.log(tf.reduce_sum(tf.multiply(targets_end_mask, self.pred_end_dist), axis=1)))
         tf.summary.scalar('cost', self.cost)
         #INDEX DISTANCE LOSS
@@ -51,6 +53,7 @@ class LossLayer():
             #self.train_op = optimizer.minimize(self.cost)
 
             #Clipping gradients to prevent explosion
-            gvs = optimizer.compute_gradients(self.cost)
-            capped_gvs = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gvs]
+            gvs = optimizer.compute_gradients(self.cost + self.lossL2)
+
+            capped_gvs = [(tf.clip_by_value(grad, -args.grad_clip, args.grad_clip), var) for grad, var in gvs]
             self.train_op = optimizer.apply_gradients(capped_gvs)

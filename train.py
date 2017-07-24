@@ -32,7 +32,7 @@ def main():
                         help='number of layers in the RNN')
     parser.add_argument('--model', type=str, default='gru',
                         help='rnn, gru, lstm, or nas')
-    parser.add_argument('--batch_size', type=int, default=20,
+    parser.add_argument('--batch_size', type=int, default=60,
                         help='minibatch size')
     parser.add_argument('--num_epochs', type=int, default=10,
                         help='number of epochs')
@@ -42,12 +42,12 @@ def main():
                         help='clip gradients at this value')
     parser.add_argument('--learning_rate', type=float, default=0.05,
                         help='learning rate')
+    parser.add_argument('--reg_scaling_factor', type=float, default=1e-6,
+                        help='l2 loss parameter')
     parser.add_argument('--decay_rate', type=float, default=0.999,
                         help='decay rate for rmsprop')
-    parser.add_argument('--output_keep_prob', type=float, default=1.0,
-                        help='probability of keeping weights in the hidden layer')
-    parser.add_argument('--input_keep_prob', type=float, default=1.0,
-                        help='probability of keeping weights in the input layer')
+    parser.add_argument('--keep_prob', type=float, default=0.8,
+                        help='probability of not dropping out weights')
     parser.add_argument('--init_from', type=str, default=None,
                         help="""continue training from saved model at this path. Path must contain files saved by previous training process:
                             'config.pkl'        : configuration;
@@ -179,7 +179,7 @@ def train(args):
                         loss_layer.targets_end: targets_end}
 
                 
-                summ, train_loss, pred_start_dist, pred_end_dist, _ = sess.run([summaries, loss_layer.cost, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
+                summ, train_loss, lossL2, pred_start_dist, pred_end_dist, _ = sess.run([summaries, loss_layer.cost, loss_layer.lossL2, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
                 #print(tf.shape(testtest))
                 #write summaries to tensorboard
                 writer.add_summary(summ, e * data_loader.num_batches + b)
@@ -202,10 +202,10 @@ def train(args):
                 
                 #print to console
                 end = time.time()
-                print("{}/{} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}"
+                print("{}/{} (epoch {}), cost = {:.3f}, lossL2 = {:.3f}, time/batch = {:.3f}"
                       .format(e * data_loader.num_batches + b,
                               args.num_epochs * data_loader.num_batches,
-                              e, train_loss, end - start))
+                              e, train_loss, lossL2, end - start))
 
                 if (e * data_loader.num_batches + b) % args.save_every == 0\
                        or (e == args.num_epochs-1 and

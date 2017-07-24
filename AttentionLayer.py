@@ -15,8 +15,6 @@ class AttentionLayer():
         batch_size = args.batch_size
         vocab_size = args.vocab_size
         hidden_size = args.AttentionLayer_size
-        output_keep_prob = args.output_keep_prob
-        input_keep_prob = args.input_keep_prob
         model = args.model
         num_layers = args.num_layers
         training = args.training
