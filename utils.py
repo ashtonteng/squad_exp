@@ -1,7 +1,6 @@
 import json
 import re
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import pickle
 import collections
@@ -282,6 +281,7 @@ class DataLoader():
         pass
 
     # def create_bins(self):
+    #     import matplotlib.pyplot as plt
     #     passage_lengths = [len(p) for p in self.para_dict.values()]
     #     self.num_bins = 50
     #     def histedges_equalN(x, nbin):
