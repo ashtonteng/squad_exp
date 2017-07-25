@@ -21,6 +21,7 @@ class BiRNNLayer():
             tf.summary.histogram("glove_embedding", self.embedding)
 
         if training and args.keep_prob < 1.0:
+            print("im dropping out!")
             inputs = tf.nn.dropout(inputs, args.keep_prob)
 
         if model == 'rnn':

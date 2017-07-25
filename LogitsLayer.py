@@ -17,6 +17,7 @@ class LogitsLayer():
         input_shape = inputs.get_shape()
         
         if training and args.keep_prob < 1.0:
+            print("I'm dropping out!")
             inputs = tf.nn.dropout(inputs, args.keep_prob)
         
         with tf.variable_scope(scope): #tf.random_normal_initializer(0.0, 0.1)
