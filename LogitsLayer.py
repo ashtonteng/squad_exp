@@ -31,12 +31,14 @@ class LogitsLayer():
         w_p1_tiled = tf.tile(tf.expand_dims(w_p1, 0), [batch_size, 1, 1]) #batch_size x 8*hidden_size x 1
         w_p2_tiled = tf.tile(tf.expand_dims(w_p2, 0), [batch_size, 1, 1])
 
-        pred_start_dist = tf.nn.softmax(tf.matmul(inputs, w_p1_tiled), 1) #batch_size x p_length x 1
+        pred_start = tf.matmul(inputs, w_p1_tiled) #batch_size x p_length x 1
 
-        start_dist_weighted_inputs = tf.multiply(pred_start_dist, inputs)
+        start_dist_weighted_inputs = tf.multiply(pred_start, inputs)
 
-        self.pred_start_logits = tf.squeeze(tf.matmul(inputs, w_p1_tiled), -1) #need to scale down inputs by p_length
-        self.pred_end_logits = tf.squeeze(tf.matmul(start_dist_weighted_inputs, w_p2_tiled), -1)
+        pred_end = tf.matmul(start_dist_weighted_inputs, w_p2_tiled)
+
+        self.pred_start_logits = tf.squeeze(pred_start, -1) #need to scale down inputs by p_length
+        self.pred_end_logits = tf.squeeze(pred_end, -1)
         
 
         #pred_end_dist = tf.nn.softmax(tf.matmul(start_dist_weighted_inputs, w_p2_tiled), 1) #end dist depends on start dist

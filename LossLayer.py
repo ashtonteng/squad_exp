@@ -19,18 +19,18 @@ class LossLayer():
         max_seq_length = tf.shape(pred_start_logits)[1]
         self.targets_start = tf.placeholder(tf.int32, [batch_size])
         self.targets_end = tf.placeholder(tf.int32, [batch_size])
-        targets_start_mask = tf.one_hot(self.targets_start, depth=max_seq_length, on_value=1.0, off_value=0.0)
-        targets_end_mask = tf.one_hot(self.targets_end, depth=max_seq_length, on_value=1.0, off_value=0.0)
+        #targets_start_mask = tf.one_hot(self.targets_start, depth=max_seq_length, on_value=1.0, off_value=0.0)
+        #targets_end_mask = tf.one_hot(self.targets_end, depth=max_seq_length, on_value=1.0, off_value=0.0)
 
         #l2-regularization
         variables = tf.trainable_variables() 
         self.lossL2 = tf.add_n([tf.nn.l2_loss(v) for v in variables if 'bias' not in v.name])*args.reg_scaling_factor
         tf.summary.scalar('lossL2', self.lossL2)
 
-        #ce_loss_start = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred_start_logits, labels=self.targets_start))
-        #ce_loss_end = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred_end_logits, labels=self.targets_end))
-        #self.cost = tf.add(ce_loss_start, ce_loss_end)
-        self.cost = -tf.reduce_mean(tf.log(tf.reduce_sum(tf.multiply(targets_start_mask, self.pred_start_logits), axis=1)) + tf.log(tf.reduce_sum(tf.multiply(targets_end_mask, self.pred_end_logits), axis=1)))
+        ce_loss_start = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred_start_logits, labels=self.targets_start))
+        ce_loss_end = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pred_end_logits, labels=self.targets_end))
+        self.cost = tf.add(ce_loss_start, ce_loss_end)
+        #self.cost = -tf.reduce_mean(tf.log(tf.reduce_sum(tf.multiply(targets_start_mask, self.pred_start_logits), axis=1)) + tf.log(tf.reduce_sum(tf.multiply(targets_end_mask, self.pred_end_logits), axis=1)))
         tf.summary.scalar('cost', self.cost)
 
         self.combined_loss = tf.add(self.lossL2, self.cost)
