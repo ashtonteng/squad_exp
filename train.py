@@ -123,7 +123,7 @@ def train(args):
     #self_matching_layer = SelfMatchingLayer(args, matching_layer.outputs, scope="selfmatchingLayer")
     attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")
     logits_layer = LogitsLayer(args, attention_layer.outputs, scope="logits")
-    loss_layer = LossLayer(args, logits_layer.pred_start_dist, logits_layer.pred_end_dist, scope="lossLayer")
+    loss_layer = LossLayer(args, logits_layer.pred_start_logits, logits_layer.pred_end_logits, scope="lossLayer")
     #start_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="startPointer")
     #end_pointer_layer = PointerLayer(args, self_matching_layer.outputs, scope="endPointer")
     #loss_layer = LossLayer(args, start_pointer_layer.pred_dist, end_pointer_layer.pred_dist, scope="lossLayer")
@@ -179,7 +179,7 @@ def train(args):
                         loss_layer.targets_end: targets_end}
 
                 
-                summ, train_loss, lossL2, pred_start_dist, pred_end_dist, _ = sess.run([summaries, loss_layer.cost, loss_layer.lossL2, loss_layer.pred_start_dist, loss_layer.pred_end_dist, loss_layer.train_op], feed)
+                summ, train_loss, lossL2, pred_start_logits, pred_end_logits, _ = sess.run([summaries, loss_layer.cost, loss_layer.lossL2, loss_layer.pred_start_logits, loss_layer.pred_end_logits, loss_layer.train_op], feed)
                 #print(tf.shape(testtest))
                 #write summaries to tensorboard
                 writer.add_summary(summ, e * data_loader.num_batches + b)
@@ -188,8 +188,8 @@ def train(args):
                 if (e * data_loader.num_batches + b) % args.save_every == 0\
                        or (e == args.num_epochs-1 and
                            b == data_loader.num_batches-1):
-                    predicted_starts = np.argmax(pred_start_dist, axis=1)
-                    predicted_ends = np.argmax(pred_end_dist, axis=1)
+                    predicted_starts = np.argmax(pred_start_logits, axis=1)
+                    predicted_ends = np.argmax(pred_end_logits, axis=1)
                     for i in range(args.batch_size):
                         target_indices = list(paragraphs_words[i, targets_start[i]:targets_end[i]+1])
                         target_string = " ".join(list(map(data_loader.integers_words.get, target_indices)))

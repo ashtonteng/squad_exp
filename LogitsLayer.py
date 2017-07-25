@@ -34,7 +34,11 @@ class LogitsLayer():
 
         start_dist_weighted_inputs = tf.multiply(pred_start_dist, inputs)
 
-        pred_end_dist = tf.nn.softmax(tf.matmul(start_dist_weighted_inputs, w_p2_tiled), 1) #end dist depends on start dist
+        self.pred_start_logits = tf.squeeze(tf.matmul(inputs, w_p1_tiled), -1) #need to scale down inputs by p_length
+        self.pred_end_logits = tf.squeeze(tf.matmul(start_dist_weighted_inputs, w_p2_tiled), -1)
+        
 
-        self.pred_start_dist = tf.squeeze(pred_start_dist, -1) #batch_size x p_length
-        self.pred_end_dist = tf.squeeze(pred_end_dist, -1)
+        #pred_end_dist = tf.nn.softmax(tf.matmul(start_dist_weighted_inputs, w_p2_tiled), 1) #end dist depends on start dist
+
+        #self.pred_start_dist = tf.squeeze(pred_start_dist, -1) #batch_size x p_length
+        #self.pred_end_dist = tf.squeeze(pred_end_dist, -1)
