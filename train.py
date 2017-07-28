@@ -40,7 +40,7 @@ def main():
                         help='save frequency')
     parser.add_argument('--grad_clip', type=float, default=5.,
                         help='clip gradients at this value')
-    parser.add_argument('--learning_rate', type=float, default=0.05,
+    parser.add_argument('--learning_rate', type=float, default=0.03,
                         help='learning rate')
     parser.add_argument('--reg_scaling_factor', type=float, default=1e-6,
                         help='l2 loss parameter')
@@ -112,13 +112,16 @@ def train(args):
 
     #paragraph_layer = ConvLayer(args, inputs=para_inputs_vectors, scope="paraConv")
     #question_layer = ConvLayer(args, inputs=ques_inputs_vectors, scope="quesConv")
-    #char_paragraph_layer = CharBiRNNLayer(args, scope="paraCharBiRNN")
-    #char_question_layer = CharBiRNNLayer(args, scope="quesCharBiRNN")
+    #char_paragraph_layer = CharBiRNNLayer(args, scope="charBiRNN")
+    #char_question_layer = CharBiRNNLayer(args, scope="charBiRNN")
+    #para_combo = tf.concat([char_paragraph_layer.outputs, para_words_inputs_vectors.outputs], axis=-1)
+    #ques_combo = tf.concat([char_question_layer.outputs, ques_words_inputs_vectors.outputs], axis=-1)
+
     paragraph_layer = BiRNNLayer(args, inputs=para_words_inputs_vectors, scope="paraBiRNN")
     question_layer = BiRNNLayer(args, inputs=ques_words_inputs_vectors, scope="quesBiRNN")
 
-    #para_combo = tf.concat([char_paragraph_layer.outputs, paragraph_layer.outputs], axis=-1)
-    #ques_combo = tf.concat([char_question_layer.outputs, question_layer.outputs], axis=-1)
+
+    #attention_layer = AttentionLayer(args, para_combo, ques_combo, scope="attentionLayer")
     #matching_layer = MatchingLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="matchingLayer")
     #self_matching_layer = SelfMatchingLayer(args, matching_layer.outputs, scope="selfmatchingLayer")
     attention_layer = AttentionLayer(args, paragraph_layer.outputs, question_layer.outputs, scope="attentionLayer")

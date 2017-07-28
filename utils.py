@@ -77,9 +77,9 @@ class DataLoader():
 
         else: #testing
             data = self.load_json_data(os.path.join(self.squad_dir, test_data_file))["data"]
-            self.para_dict_file = os.path.join(pickle_dir, "para_dict_train.pkl")
-            self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict_train.pkl")
-            self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict_train.pkl")
+            self.para_dict_file = os.path.join(pickle_dir, "para_dict_dev.pkl")
+            self.para_to_qa_dict_file = os.path.join(pickle_dir, "para_to_qa_dict_dev.pkl")
+            self.qa_data_dict_file = os.path.join(pickle_dir, "qa_data_dict_dev.pkl")
 
 
         if os.path.exists(self.para_dict_file) and os.path.exists(self.para_to_qa_dict_file) and os.path.exists(self.qa_data_dict_file):
@@ -218,7 +218,7 @@ class DataLoader():
             if word in glove_embeddings: #if word in glove, initialize to glove embedding
                 embeddings.append(glove_embeddings[word])
             else: #if word not in glove, initialize to random embedding [0.0, 1.0]
-                embeddings.append(np.random.random(self.embedding_dim))
+                embeddings.append(numpy.random.uniform(low=-1.0, high=1.0, size=self.embedding_dim)) 
         for glove_word in glove_embeddings:
             if glove_word not in words_integers: #also add all glove_words not used in training to embedding matrix
                 new_integer = max_integer = max_integer + 1
@@ -230,7 +230,7 @@ class DataLoader():
         oov_integer = max_integer + 1
         words_integers["<OOV>"] = oov_integer
         integers_words[oov_integer] = "<OOV>"
-        embeddings.append(np.random.random(self.embedding_dim))
+        embeddings.append(numpy.random.uniform(low=-1.0, high=1.0, size=self.embedding_dim)) 
         
         embed_mtx = np.asarray(embeddings)
         #vocab = set(words_integers.keys())
